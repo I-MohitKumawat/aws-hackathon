@@ -515,6 +515,53 @@ JSON
 
 The backend validates and normalizes each evidence item before saving it. We should add deduplication if the telemetry source can resend the same records.
 
+## E.1. OpenTelemetry traces ingestion (OTLP HTTP)
+
+`POST /api/v1/otlp/v1/traces` (alias: `POST /v1/traces`)
+
+Receives standard OTLP JSON formatted traces exported by the OpenTelemetry Collector (`otlp_http` exporter).
+
+- Normalizes spans into `Evidence` records (`type="trace"`, `source="otel"`).
+- Deduplicates spans using deterministic IDs (`ev_span_{spanId}`).
+- Automatically redacts sensitive fields (passwords, tokens, API keys).
+- Links immediately if span attribute `incident.id` matches an existing incident; otherwise stages with `incident_id=null`.
+
+Response — `202 Accepted`:
+```json
+{
+  "accepted_spans": 2,
+  "rejected_spans": 0,
+  "associated_spans": 1,
+  "unassociated_spans": 1
+}
+```
+
+## E.2. Associate staged telemetry with incident
+
+`POST /api/v1/incidents/{id}/associate-telemetry`
+
+Correlates unassigned staged evidence (`incident_id is null`) with the specified incident by matching service name and optional time window bounds.
+
+Request:
+```json
+{
+  "service": "checkout",
+  "time_window_start": "2026-09-29T09:00:00Z",
+  "time_window_end": "2026-09-29T10:00:00Z"
+}
+```
+
+Response — `200 OK`:
+```json
+{
+  "incident_id": "inc_001",
+  "service": "checkout",
+  "associated_count": 5,
+  "time_window_start": "2026-09-29T09:00:00Z",
+  "time_window_end": "2026-09-29T10:00:00Z"
+}
+```
+
 ## F. List evidence
 
 `GET /api/v1/incidents/{id}/evidence?limit=50&offset=0&type=log`

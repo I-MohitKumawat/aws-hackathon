@@ -15,6 +15,7 @@ from .api.investigations import (
     incident_investigations_router,
     investigations_router,
 )
+from .api.otlp import router as otlp_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,6 +28,31 @@ async def lifespan(app: FastAPI):
                 conn.commit()
     except Exception:
         pass
+
+    # Ensure evidence.incident_id is nullable if existing table had NOT NULL constraint
+    try:
+        if engine.dialect.name == "sqlite":
+            with engine.connect() as conn:
+                table_info = conn.exec_driver_sql("PRAGMA table_info(evidence)").fetchall()
+                for col in table_info:
+                    # col format: (cid, name, type, notnull, dflt_value, pk)
+                    if col[1] == "incident_id" and col[3] == 1:
+                        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+                        conn.exec_driver_sql("ALTER TABLE evidence RENAME TO _evidence_old")
+                        Base.metadata.create_all(bind=engine)
+                        conn.exec_driver_sql("INSERT INTO evidence SELECT * FROM _evidence_old")
+                        conn.exec_driver_sql("DROP TABLE _evidence_old")
+                        conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+                        conn.commit()
+                        break
+        elif engine.dialect.name == "postgresql":
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE evidence ALTER COLUMN incident_id DROP NOT NULL"))
+                conn.commit()
+    except Exception:
+        pass
+
     # Initialize database tables
     Base.metadata.create_all(bind=engine)
     yield
@@ -95,3 +121,5 @@ app.include_router(telemetry_router, prefix="/api/v1")
 app.include_router(evidence_router, prefix="/api/v1")
 app.include_router(incident_investigations_router, prefix="/api/v1")
 app.include_router(investigations_router, prefix="/api/v1")
+app.include_router(otlp_router, prefix="/api/v1")
+app.include_router(otlp_router)

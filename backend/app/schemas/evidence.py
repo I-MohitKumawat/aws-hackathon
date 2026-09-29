@@ -26,9 +26,21 @@ class TelemetryIngestResponse(BaseModel):
 
 class EvidenceResponse(RawEvidenceItem):
     id: str
-    incident_id: str
+    incident_id: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
 
 class EvidenceListResponse(PaginatedResponse[EvidenceResponse]):
     pass
+
+class TelemetryAssociationRequest(BaseModel):
+    service: Optional[str] = None
+    time_window_start: Optional[datetime] = None
+    time_window_end: Optional[datetime] = None
+
+class TelemetryAssociationResponse(BaseModel):
+    incident_id: str
+    service: str
+    associated_count: int
+    time_window_start: Optional[datetime] = None
+    time_window_end: Optional[datetime] = None

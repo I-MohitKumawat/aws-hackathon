@@ -1,0 +1,44 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 75
+    spike_limit_percentage: 20
+
+  batch:
+    send_batch_size: 10
+    timeout: 1s
+
+exporters:
+  otlp_http/backend:
+    endpoint: http://backend:8000/api/v1/otlp
+    encoding: json
+    retry_on_failure:
+      enabled: true
+      initial_interval: 1s
+      max_interval: 10s
+
+  debug:
+    verbosity: detailed
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http/backend, debug]
+  telemetry:
+    logs:
+      level: info

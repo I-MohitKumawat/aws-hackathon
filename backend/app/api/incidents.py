@@ -5,12 +5,14 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 
 from ..database import get_db
-from ..models import Incident
+from ..models import Incident, Evidence
 from ..schemas import (
     IncidentCreate,
     IncidentResponse,
     IncidentListResponse,
     IncidentUpdate,
+    TelemetryAssociationRequest,
+    TelemetryAssociationResponse,
 )
 from ..core.exceptions import AppException
 
@@ -97,3 +99,51 @@ def update_incident(id: str, payload: IncidentUpdate, db: Session = Depends(get_
         "status": incident.status,
         "ended_at": incident.ended_at,
     }
+
+@router.post("/{id}/associate-telemetry", response_model=TelemetryAssociationResponse)
+def associate_telemetry_to_incident(
+    id: str,
+    payload: Optional[TelemetryAssociationRequest] = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Explicitly associates unassigned telemetry evidence with the specified incident
+    based on service matching and optional time window bounds.
+    """
+    incident = db.get(Incident, id)
+    if not incident:
+        raise AppException(
+            status_code=404,
+            code="INCIDENT_NOT_FOUND",
+            message="The requested incident was not found.",
+            details={"incident_id": id},
+        )
+
+    target_service = payload.service if (payload and payload.service) else incident.service
+    window_start = payload.time_window_start if (payload and payload.time_window_start) else None
+    window_end = payload.time_window_end if (payload and payload.time_window_end) else None
+
+    # Query unlinked evidence items (where incident_id is NULL)
+    query = select(Evidence).where(
+        Evidence.incident_id.is_(None),
+        Evidence.service == target_service,
+    )
+    if window_start:
+        query = query.where(Evidence.timestamp >= window_start)
+    if window_end:
+        query = query.where(Evidence.timestamp <= window_end)
+
+    unlinked_items = list(db.scalars(query).all())
+    for item in unlinked_items:
+        item.incident_id = incident.id
+
+    db.commit()
+
+    return TelemetryAssociationResponse(
+        incident_id=incident.id,
+        service=target_service,
+        associated_count=len(unlinked_items),
+        time_window_start=window_start,
+        time_window_end=window_end,
+    )
+

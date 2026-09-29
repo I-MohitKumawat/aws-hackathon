@@ -241,28 +241,12 @@ Core security controls
 
 * No automatic external model API calls or telemetry sharing.
 
-## Scope for the first working prototype
+## OpenTelemetry Integration Architecture
 
-Build now
-
-* One OpenTelemetry demo application and one controlled failure.
-
-* Collection of a limited set of real logs and traces.
-
-* Python-based structured retrieval with PostgreSQL.
-
-* A local LLM generating a hypothesis and citing evidence IDs.
-
-* A basic Next.js dashboard showing the result.
-
-Add later
-
-* More observability and CI/CD integrations.
-
-* Semantic retrieval across historical incidents and code changes.
-
-* Dynamic agent tool-calling and multiple hypotheses.
-
-* Multi-user administration, advanced authorization and production hardening.
+The system features an automated OpenTelemetry ingestion pipeline:
+1. **Instrumented Application (`checkout-service`)**: Uses the official OpenTelemetry Python SDK to emit real request traces and simulate controlled database connection pool exhaustion.
+2. **OpenTelemetry Collector (`otel-collector`)**: Runs as a Docker container receiving OTLP gRPC (`:4317`) and HTTP (`:4318`), processing spans through memory limiter and batch processors, and exporting OTLP JSON to the backend.
+3. **Backend OTLP Ingestion**: Exposes `POST /api/v1/otlp/v1/traces`, normalizes spans to the `Evidence` model (`type="trace"`), deduplicates re-sent spans (`ev_span_{spanId}`), scrubs sensitive credentials, and supports direct or explicit incident association.
+4. **AI Investigation Pipeline**: Retrieved OTLP evidence is fed into Ollama with grounding validation ensuring all report hypotheses cite valid evidence IDs.
 
 The central idea: conventional code collects and correlates the evidence, RAG retrieves the relevant context, and the LLM investigates that context to produce an evidence-backed hypothesis. The system assists engineers with root-cause investigation; it does not replace existing CI/CD or monitoring automation.

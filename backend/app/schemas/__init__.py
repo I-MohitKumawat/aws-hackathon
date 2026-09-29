@@ -15,7 +15,10 @@ from .evidence import (
     EvidenceResponse,
     EvidenceListResponse,
     EvidenceType,
+    TelemetryAssociationRequest,
+    TelemetryAssociationResponse,
 )
+from .otlp import OtlpTracesPayload, OtlpIngestResponse
 from .investigation import (
     TimeWindow,
     InvestigationStartRequest,

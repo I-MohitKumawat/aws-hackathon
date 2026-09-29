@@ -12,7 +12,7 @@ class Evidence(Base):
     __tablename__ = "evidence"
 
     id = Column(String(64), primary_key=True, default=generate_uuid, index=True)
-    incident_id = Column(String(64), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=False, index=True)
+    incident_id = Column(String(64), ForeignKey("incidents.id", ondelete="CASCADE"), nullable=True, index=True)
     type = Column(String(30), nullable=False, index=True)
     timestamp = Column(DateTime(timezone=True), nullable=False, index=True)
     service = Column(String(100), nullable=False, index=True)

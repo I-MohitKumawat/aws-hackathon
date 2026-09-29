@@ -59,6 +59,43 @@ services:
     depends_on:
       - backend
 
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.111.0
+    container_name: incident_otel_collector
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml
+    ports:
+      - "4317:4317"   # OTLP gRPC receiver
+      - "4318:4318"   # OTLP HTTP receiver
+      - "13133:13133" # Health check
+    depends_on:
+      - backend
+    healthcheck:
+      test: ["CMD", "/otelcol-contrib", "healthcheck"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  checkout-service:
+    build:
+      context: ./services/checkout_service
+      dockerfile: Dockerfile
+    container_name: incident_checkout_service
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_SERVICE_NAME: checkout
+      SERVICE_VERSION: "2.1.0"
+      DEPLOYMENT_ENVIRONMENT: production
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      otel-collector:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   ollama_models:
+
