@@ -11,6 +11,9 @@ class IncidentBase(BaseModel):
     service: str
     severity: SeverityType
     description: Optional[str] = None
+    source: Optional[str] = "manual"
+    detection_rule: Optional[str] = None
+    detection_reason: Optional[str] = None
 
 class IncidentCreate(IncidentBase):
     started_at: datetime

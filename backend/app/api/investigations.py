@@ -39,6 +39,23 @@ def start_investigation(
             details={"incident_id": id},
         )
 
+    # Concurrency guard: return existing active job if already queued or running
+    active_job = db.execute(
+        select(InvestigationJob)
+        .where(
+            InvestigationJob.incident_id == id,
+            InvestigationJob.status.in_(["queued", "running"]),
+        )
+        .order_by(InvestigationJob.created_at.desc())
+    ).scalars().first()
+    if active_job:
+        return InvestigationJobCreateResponse(
+            job_id=active_job.job_id,
+            incident_id=active_job.incident_id,
+            status=active_job.status,
+            created_at=active_job.created_at,
+        )
+
     # Update incident status to 'investigating'
     incident.status = "investigating"
 

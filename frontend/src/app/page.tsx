@@ -21,6 +21,7 @@ const statusColors: Record<string, string> = {
 export default function DashboardPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [sourceFilter, setSourceFilter] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,7 +30,10 @@ export default function DashboardPage() {
       try {
         setLoading(true);
         setError(null);
-        const res = await api.getIncidents(statusFilter ? { status: statusFilter } : undefined);
+        const params: any = {};
+        if (statusFilter) params.status = statusFilter;
+        if (sourceFilter) params.source = sourceFilter;
+        const res = await api.getIncidents(params);
         setIncidents(res.items);
       } catch (err: any) {
         setError(err.message || "Failed to load incidents");
@@ -38,7 +42,7 @@ export default function DashboardPage() {
       }
     }
     fetchIncidents();
-  }, [statusFilter]);
+  }, [statusFilter, sourceFilter]);
 
   return (
     <div className="space-y-6">
@@ -49,20 +53,44 @@ export default function DashboardPage() {
             Real-time telemetry correlation and automated AI root cause investigation.
           </p>
         </div>
-        <div className="flex items-center space-x-2">
-          {["", "open", "investigating", "resolved"].map((status) => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                statusFilter === status
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "bg-slate-900 text-slate-400 hover:text-white border border-slate-800"
-              }`}
-            >
-              {status ? status.charAt(0).toUpperCase() + status.slice(1) : "All"}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Status filters */}
+          <div className="flex items-center space-x-1 bg-slate-950/60 p-1 rounded-lg border border-slate-800">
+            {["", "open", "investigating", "resolved"].map((status) => (
+              <button
+                key={status}
+                onClick={() => setStatusFilter(status)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                  statusFilter === status
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                {status ? status.charAt(0).toUpperCase() + status.slice(1) : "All Status"}
+              </button>
+            ))}
+          </div>
+
+          {/* Source filters */}
+          <div className="flex items-center space-x-1 bg-slate-950/60 p-1 rounded-lg border border-slate-800">
+            {[
+              { id: "", label: "All Sources" },
+              { id: "auto_detected", label: "Auto-Detected" },
+              { id: "manual", label: "Manual" },
+            ].map((src) => (
+              <button
+                key={src.id}
+                onClick={() => setSourceFilter(src.id)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                  sourceFilter === src.id
+                    ? "bg-purple-600 text-white shadow-sm"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                {src.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -87,8 +115,8 @@ export default function DashboardPage() {
               key={incident.id}
               className="p-5 rounded-xl bg-slate-900/60 border border-slate-800 hover:border-slate-700 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
             >
-              <div className="space-y-1.5">
-                <div className="flex items-center space-x-2">
+              <div className="space-y-1.5 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
                   <span
                     className={`px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider border ${
                       severityColors[incident.severity] || "text-slate-400"
@@ -103,18 +131,48 @@ export default function DashboardPage() {
                   >
                     {incident.status}
                   </span>
+                  {incident.source === "auto_detected" ? (
+                    <span className="px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider bg-purple-500/10 text-purple-300 border border-purple-500/30 flex items-center space-x-1">
+                      <span>⚡</span>
+                      <span>Auto-Detected</span>
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                      Manual
+                    </span>
+                  )}
                   <span className="text-xs font-mono text-indigo-400 bg-indigo-950/50 px-2 py-0.5 rounded">
                     svc:{incident.service}
                   </span>
+                  {incident.detection_rule && (
+                    <span className="text-xs font-mono text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded border border-slate-700/60">
+                      rule:{incident.detection_rule}
+                    </span>
+                  )}
                 </div>
+
                 <h3 className="text-base font-semibold text-white">{incident.title}</h3>
                 {incident.description && (
-                  <p className="text-sm text-slate-400 line-clamp-1">{incident.description}</p>
+                  <p className="text-sm text-slate-400 line-clamp-2">{incident.description}</p>
                 )}
+
+                {incident.detection_reason && (
+                  <div className="text-xs text-purple-300/90 bg-purple-950/20 border border-purple-900/40 px-2.5 py-1.5 rounded-lg mt-1">
+                    <span className="font-semibold text-purple-200">Trigger Reason:</span>{" "}
+                    {incident.detection_reason}
+                  </div>
+                )}
+
                 <div className="text-xs text-slate-500 flex items-center space-x-3 pt-1">
                   <span>ID: {incident.id}</span>
                   <span>•</span>
                   <span>Started: {new Date(incident.started_at).toLocaleString()}</span>
+                  {incident.ended_at && (
+                    <>
+                      <span>•</span>
+                      <span className="text-emerald-400">Resolved: {new Date(incident.ended_at).toLocaleString()}</span>
+                    </>
+                  )}
                 </div>
               </div>
 

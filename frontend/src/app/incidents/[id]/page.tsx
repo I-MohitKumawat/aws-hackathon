@@ -94,6 +94,20 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
   }
 
   const [filterType, setFilterType] = useState<"all" | "trace" | "log" | "metric">("all");
+  const [resolving, setResolving] = useState<boolean>(false);
+
+  async function handleResolveIncident() {
+    if (!incident) return;
+    try {
+      setResolving(true);
+      const updated = await api.resolveIncident(incident.id);
+      setIncident(updated);
+    } catch (err: any) {
+      setError(err.message || "Failed to resolve incident");
+    } finally {
+      setResolving(false);
+    }
+  }
 
   const traceCount = evidenceList.filter((e) => e.type === "trace").length;
   const logCount = evidenceList.filter((e) => e.type === "log").length;
@@ -113,10 +127,23 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
         </a>
         <div className="mt-3 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20">
                 {incident?.severity}
               </span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded border border-slate-700 bg-slate-800 text-slate-300 uppercase">
+                {incident?.status}
+              </span>
+              {incident?.source === "auto_detected" ? (
+                <span className="px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider bg-purple-500/10 text-purple-300 border border-purple-500/30 flex items-center space-x-1">
+                  <span>⚡</span>
+                  <span>Auto-Detected</span>
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                  Manual
+                </span>
+              )}
               <span className="text-xs font-mono text-indigo-400 bg-indigo-950/50 px-2 py-0.5 rounded">
                 svc:{incident?.service}
               </span>
@@ -128,7 +155,16 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
             )}
           </div>
 
-          <div>
+          <div className="flex items-center space-x-2">
+            {incident?.status !== "resolved" && (
+              <button
+                onClick={handleResolveIncident}
+                disabled={resolving}
+                className="px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-900 disabled:text-emerald-400 text-white text-sm font-medium transition-all shadow-sm"
+              >
+                {resolving ? "Resolving..." : "Mark as Resolved"}
+              </button>
+            )}
             <button
               onClick={handleStartInvestigation}
               disabled={investigating}
@@ -146,6 +182,29 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
           </div>
         </div>
       </div>
+
+      {/* Auto-Detection Reason Card */}
+      {incident?.source === "auto_detected" && (
+        <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-800/40 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center space-x-2">
+              <span className="text-base">⚡</span>
+              <span className="text-sm font-semibold text-purple-200">Automatically Detected by Engine</span>
+              {incident.detection_rule && (
+                <span className="text-xs font-mono text-purple-300 bg-purple-900/60 px-2 py-0.5 rounded border border-purple-700/50">
+                  rule:{incident.detection_rule}
+                </span>
+              )}
+            </div>
+            <span className="text-xs text-purple-400 font-mono">Deduplication & Telemetry Correlation Active</span>
+          </div>
+          {incident.detection_reason && (
+            <p className="text-xs text-purple-200/90 pl-6 leading-relaxed">
+              <strong>Detection Reason:</strong> {incident.detection_reason}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Investigation Progress Card */}
       {activeJob && (

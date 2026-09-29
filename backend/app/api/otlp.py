@@ -7,8 +7,10 @@ from typing import Any, Dict, List, Optional, Union
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..database import get_db
 from ..models import Incident, Evidence
+from ..services.detection_service import detection_service
 from ..schemas.otlp import (
     OtlpTracesPayload,
     OtlpIngestResponse,
@@ -201,6 +203,20 @@ async def ingest_otlp_traces(payload: OtlpTracesPayload, db: Session = Depends(g
             db.add(ev)
         db.commit()
 
+        if settings.AUTO_DETECTION_ENABLED and unassociated > 0:
+            has_signal = any(
+                ev.incident_id is None and (
+                    ev.severity in ["error", "fatal", "critical"]
+                    or (ev.metadata_json and ev.metadata_json.get("error"))
+                )
+                for ev in new_evidence
+            )
+            if has_signal:
+                try:
+                    detection_service.evaluate_and_create_incidents(db)
+                except Exception as e:
+                    logger.error("Auto-detection evaluation failed during trace ingestion: %s", e)
+
     return OtlpIngestResponse(
         accepted_spans=accepted,
         rejected_spans=rejected,
@@ -362,6 +378,17 @@ async def ingest_otlp_logs(payload: OtlpLogsPayload, db: Session = Depends(get_d
             db.add(ev)
         db.commit()
 
+        if settings.AUTO_DETECTION_ENABLED and unassociated > 0:
+            has_signal = any(
+                ev.incident_id is None and ev.severity in ["error", "fatal", "critical"]
+                for ev in new_evidence
+            )
+            if has_signal:
+                try:
+                    detection_service.evaluate_and_create_incidents(db)
+                except Exception as e:
+                    logger.error("Auto-detection evaluation failed during log ingestion: %s", e)
+
     return OtlpLogsIngestResponse(
         accepted_logs=accepted,
         rejected_logs=rejected,
@@ -513,6 +540,17 @@ async def ingest_otlp_metrics(payload: OtlpMetricsPayload, db: Session = Depends
         for ev in new_evidence:
             db.add(ev)
         db.commit()
+
+        if settings.AUTO_DETECTION_ENABLED and unassociated > 0:
+            has_signal = any(
+                ev.incident_id is None and ev.severity in ["error", "fatal", "critical"]
+                for ev in new_evidence
+            )
+            if has_signal:
+                try:
+                    detection_service.evaluate_and_create_incidents(db)
+                except Exception as e:
+                    logger.error("Auto-detection evaluation failed during metric ingestion: %s", e)
 
     return OtlpMetricsIngestResponse(
         accepted_metrics=accepted,

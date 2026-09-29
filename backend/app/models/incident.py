@@ -18,6 +18,9 @@ class Incident(Base):
     description = Column(Text, nullable=True)
     started_at = Column(DateTime(timezone=True), nullable=False)
     ended_at = Column(DateTime(timezone=True), nullable=True)
+    source = Column(String(30), default="manual", nullable=False, index=True)
+    detection_rule = Column(String(100), nullable=True, index=True)
+    detection_reason = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
     evidence_items = relationship("Evidence", back_populates="incident", cascade="all, delete-orphan")

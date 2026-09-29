@@ -53,6 +53,29 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
+    # Ensure incidents table has source, detection_rule, and detection_reason columns
+    try:
+        if engine.dialect.name == "postgresql":
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS source VARCHAR(30) DEFAULT 'manual' NOT NULL"))
+                conn.execute(text("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS detection_rule VARCHAR(100)"))
+                conn.execute(text("ALTER TABLE incidents ADD COLUMN IF NOT EXISTS detection_reason TEXT"))
+                conn.commit()
+        elif engine.dialect.name == "sqlite":
+            with engine.connect() as conn:
+                table_info = conn.exec_driver_sql("PRAGMA table_info(incidents)").fetchall()
+                col_names = {col[1] for col in table_info}
+                if table_info and "source" not in col_names:
+                    conn.exec_driver_sql("ALTER TABLE incidents ADD COLUMN source VARCHAR(30) DEFAULT 'manual' NOT NULL")
+                if table_info and "detection_rule" not in col_names:
+                    conn.exec_driver_sql("ALTER TABLE incidents ADD COLUMN detection_rule VARCHAR(100)")
+                if table_info and "detection_reason" not in col_names:
+                    conn.exec_driver_sql("ALTER TABLE incidents ADD COLUMN detection_reason TEXT")
+                conn.commit()
+    except Exception:
+        pass
+
     # Initialize database tables
     Base.metadata.create_all(bind=engine)
     yield

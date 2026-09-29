@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
-from typing import Optional
-from fastapi import APIRouter, Depends, Query, status
+from typing import List, Optional
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, status
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
 
@@ -15,6 +15,7 @@ from ..schemas import (
     TelemetryAssociationResponse,
 )
 from ..core.exceptions import AppException
+from ..services.detection_service import detection_service
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
 
@@ -26,6 +27,9 @@ def create_incident(payload: IncidentCreate, db: Session = Depends(get_db)):
         severity=payload.severity,
         status="open",
         description=payload.description,
+        source=payload.source or "manual",
+        detection_rule=payload.detection_rule,
+        detection_reason=payload.detection_reason,
         started_at=payload.started_at,
         created_at=datetime.now(timezone.utc),
     )
@@ -39,6 +43,7 @@ def list_incidents(
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     status: Optional[str] = Query(default=None),
+    source: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
 ):
     query = select(Incident)
@@ -47,6 +52,10 @@ def list_incidents(
     if status:
         query = query.where(Incident.status == status)
         count_query = count_query.where(Incident.status == status)
+
+    if source:
+        query = query.where(Incident.source == source)
+        count_query = count_query.where(Incident.source == source)
 
     total = db.scalar(count_query) or 0
     query = query.order_by(Incident.created_at.desc()).offset(offset).limit(limit)
@@ -57,6 +66,23 @@ def list_incidents(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+@router.post("/detect", response_model=List[IncidentResponse])
+def run_detection_evaluation(
+    window_seconds: Optional[int] = Query(default=None, ge=5, le=3600),
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Triggers an incident detection cycle across recent unlinked telemetry.
+    Evaluates detection rules, groups continuing failures, correlates telemetry,
+    and returns created/updated incidents.
+    """
+    return detection_service.evaluate_and_create_incidents(
+        db=db,
+        window_seconds=window_seconds,
+        background_tasks=background_tasks,
     )
 
 @router.get("/{id}", response_model=IncidentResponse)
@@ -146,4 +172,23 @@ def associate_telemetry_to_incident(
         time_window_start=window_start,
         time_window_end=window_end,
     )
+
+@router.post("/{id}/resolve", response_model=IncidentResponse)
+def resolve_incident(id: str, db: Session = Depends(get_db)):
+    """
+    Marks an active incident as resolved, recording the ended_at timestamp.
+    """
+    incident = db.get(Incident, id)
+    if not incident:
+        raise AppException(
+            status_code=404,
+            code="INCIDENT_NOT_FOUND",
+            message="The requested incident was not found.",
+            details={"incident_id": id},
+        )
+    incident.status = "resolved"
+    incident.ended_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(incident)
+    return incident
 

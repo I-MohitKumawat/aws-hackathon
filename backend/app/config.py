@@ -15,6 +15,15 @@ class Settings(BaseSettings):
     EMBEDDING_DIMENSION: int = 384
     RETRIEVAL_TOP_K: int = 15
 
+    # Automatic Incident Detection & Correlation
+    AUTO_DETECTION_ENABLED: bool = True
+    DETECTION_WINDOW_SECONDS: int = 60
+    DETECTION_ERROR_COUNT_THRESHOLD: int = 3
+    DETECTION_ERROR_RATE_THRESHOLD: float = 0.5
+    DETECTION_LATENCY_MS_THRESHOLD: float = 2000.0
+    DETECTION_DEDUPLICATION_WINDOW_SECONDS: int = 300
+    AUTO_INVESTIGATE_ON_DETECTION: bool = False
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
