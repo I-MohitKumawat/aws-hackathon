@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import uuid
@@ -6,7 +7,7 @@ import requests
 from fastapi import FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel
 
-from opentelemetry import trace
+from opentelemetry import trace, metrics
 from opentelemetry.trace import Status, StatusCode
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -15,7 +16,16 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-# Initialize OpenTelemetry TracerProvider
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+
+# Initialize OpenTelemetry Resource
 service_name = os.getenv("OTEL_SERVICE_NAME", "checkout")
 service_version = os.getenv("SERVICE_VERSION", "2.1.0")
 environment = os.getenv("DEPLOYMENT_ENVIRONMENT", "production")
@@ -26,20 +36,52 @@ resource = Resource.create({
     "deployment.environment": environment,
 })
 
-provider = TracerProvider(resource=resource)
-
 otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
-# If endpoint has http:// prefix, strip it for grpc
 grpc_endpoint = otlp_endpoint.replace("http://", "").replace("https://", "")
 is_insecure = os.getenv("OTEL_EXPORTER_OTLP_INSECURE", "true").lower() in ("true", "1")
 
-otlp_exporter = OTLPSpanExporter(
-    endpoint=grpc_endpoint,
-    insecure=is_insecure,
-)
+# Tracing Setup
+provider = TracerProvider(resource=resource)
+otlp_exporter = OTLPSpanExporter(endpoint=grpc_endpoint, insecure=is_insecure)
 provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
 trace.set_tracer_provider(provider)
 tracer = trace.get_tracer("checkout.service", service_version)
+
+# Logging Setup
+logger_provider = LoggerProvider(resource=resource)
+log_processor = BatchLogRecordProcessor(OTLPLogExporter(endpoint=grpc_endpoint, insecure=is_insecure))
+logger_provider.add_log_record_processor(log_processor)
+set_logger_provider(logger_provider)
+
+log_handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
+logging.getLogger().addHandler(log_handler)
+logging.getLogger().setLevel(logging.INFO)
+logger = logging.getLogger("checkout")
+
+# Metrics Setup
+metric_reader = PeriodicExportingMetricReader(
+    OTLPMetricExporter(endpoint=grpc_endpoint, insecure=is_insecure),
+    export_interval_millis=2000,
+)
+meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+metrics.set_meter_provider(meter_provider)
+meter = metrics.get_meter("checkout.service", service_version)
+
+checkout_orders_counter = meter.create_counter(
+    "checkout.orders.total",
+    description="Total number of checkout orders processed",
+    unit="1",
+)
+checkout_pool_exhausted_gauge = meter.create_gauge(
+    "checkout.db.pool.exhausted",
+    description="Database connection pool exhaustion indicator (1 for exhausted, 0 for normal)",
+    unit="1",
+)
+checkout_latency_gauge = meter.create_gauge(
+    "checkout.request.duration_ms",
+    description="Checkout operation execution latency in milliseconds",
+    unit="ms",
+)
 
 # Downstream Service URLs
 INVENTORY_SERVICE_URL = os.getenv("INVENTORY_SERVICE_URL", "http://localhost:8081").rstrip("/")
@@ -65,6 +107,9 @@ class DownstreamServiceError(Exception):
 class CheckoutRequest(BaseModel):
     items: list[str] = ["item_alpha", "item_beta", "item_gamma"]
     total: float = 149.99
+    simulate_error: bool = False
+    simulate_inventory_error: bool = False
+    simulate_payment_error: bool = False
 
 class CheckoutResponse(BaseModel):
     order_id: str
@@ -101,6 +146,9 @@ def execute_checkout(
     3. Calls Inventory Service to reserve stock (HTTP client span + W3C context propagation)
     4. Calls Payment Service to process charge (HTTP client span + W3C context propagation)
     """
+    sim_error = simulate_error or (payload.simulate_error if payload else False)
+    sim_inv = simulate_inventory_error or (payload.simulate_inventory_error if payload else False)
+    sim_pay = simulate_payment_error or (payload.simulate_payment_error if payload else False)
     current_span = trace.get_current_span()
     if x_incident_id and current_span:
         current_span.set_attribute("incident.id", x_incident_id)
@@ -108,6 +156,14 @@ def execute_checkout(
     order_id = f"ord_{uuid.uuid4().hex[:8]}"
     items = payload.items if payload else ["item_alpha", "item_beta", "item_gamma"]
     total_val = payload.total if payload else 149.99
+
+    start_time = time.time()
+    extra_tags = {"incident.id": x_incident_id, "order_id": order_id} if x_incident_id else {"order_id": order_id}
+    metric_attrs = {"service": service_name}
+    if x_incident_id:
+        metric_attrs["incident.id"] = x_incident_id
+
+    logger.info("Order %s initiated with %d items (total: $%.2f)", order_id, len(items), total_val, extra=extra_tags)
 
     # Step 1: Validate Cart (Internal Span)
     with tracer.start_as_current_span("validate_cart") as span:
@@ -124,7 +180,7 @@ def execute_checkout(
         db_span.set_attribute("db.system", "postgresql")
         db_span.set_attribute("db.pool.max", 20)
 
-        if simulate_error:
+        if sim_error:
             err_msg = "Connection pool timeout: unable to obtain connection to postgresql://db-primary:5432/checkout within 5000ms"
             exc = ConnectionPoolTimeoutError(err_msg)
             db_span.record_exception(exc)
@@ -136,7 +192,13 @@ def execute_checkout(
                 current_span.set_status(Status(StatusCode.ERROR, description=err_msg))
                 current_span.set_attribute("error.type", "POOL_TIMEOUT")
 
+            logger.error("Database connection pool acquisition timed out after 5000ms for order %s. Active connections: 20/20.", order_id, extra=extra_tags, exc_info=True)
+            checkout_orders_counter.add(1, {**metric_attrs, "status": "error", "error_type": "POOL_TIMEOUT"})
+            checkout_pool_exhausted_gauge.set(1, metric_attrs)
+
             provider.force_flush()
+            log_processor.force_flush()
+            metric_reader.force_flush()
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=err_msg,
@@ -164,7 +226,7 @@ def execute_checkout(
             inv_resp = requests.post(
                 f"{INVENTORY_SERVICE_URL}/inventory/reserve",
                 json={"items": items, "order_id": order_id},
-                params={"simulate_error": "true" if simulate_inventory_error else "false"},
+                params={"simulate_error": "true" if sim_inv else "false"},
                 headers=inv_headers,
                 timeout=10,
             )
@@ -183,7 +245,12 @@ def execute_checkout(
                     current_span.set_attribute("error.type", "DOWNSTREAM_SERVICE_ERROR")
                     current_span.set_attribute("failed.service", "inventory")
 
+                logger.error("Order %s failed: Inventory service error: %s", order_id, exc, extra=extra_tags, exc_info=True)
+                checkout_orders_counter.add(1, {**metric_attrs, "status": "error", "error_type": "DOWNSTREAM_INVENTORY_ERROR"})
+
                 provider.force_flush()
+                log_processor.force_flush()
+                metric_reader.force_flush()
                 raise HTTPException(
                     status_code=inv_resp.status_code,
                     detail=f"Downstream service 'inventory' failed: {err_detail}",
@@ -196,7 +263,11 @@ def execute_checkout(
         except requests.RequestException as req_exc:
             inv_client_span.record_exception(req_exc)
             inv_client_span.set_status(Status(StatusCode.ERROR, description=str(req_exc)))
+            logger.error("Could not connect to inventory service for order %s: %s", order_id, req_exc, extra=extra_tags, exc_info=True)
+            checkout_orders_counter.add(1, {**metric_attrs, "status": "error", "error_type": "INVENTORY_UNAVAILABLE"})
             provider.force_flush()
+            log_processor.force_flush()
+            metric_reader.force_flush()
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=f"Could not connect to inventory service: {req_exc}",
@@ -221,7 +292,7 @@ def execute_checkout(
             pay_resp = requests.post(
                 f"{PAYMENT_SERVICE_URL}/payment/process",
                 json={"order_id": order_id, "amount": total_val, "payment_method": "card"},
-                params={"simulate_error": "true" if simulate_payment_error else "false"},
+                params={"simulate_error": "true" if sim_pay else "false"},
                 headers=pay_headers,
                 timeout=10,
             )
@@ -240,7 +311,12 @@ def execute_checkout(
                     current_span.set_attribute("error.type", "DOWNSTREAM_SERVICE_ERROR")
                     current_span.set_attribute("failed.service", "payment")
 
+                logger.error("Order %s failed: Payment service error: %s", order_id, exc, extra=extra_tags, exc_info=True)
+                checkout_orders_counter.add(1, {**metric_attrs, "status": "error", "error_type": "DOWNSTREAM_PAYMENT_ERROR"})
+
                 provider.force_flush()
+                log_processor.force_flush()
+                metric_reader.force_flush()
                 raise HTTPException(
                     status_code=pay_resp.status_code,
                     detail=f"Downstream service 'payment' failed: {err_detail}",
@@ -253,14 +329,26 @@ def execute_checkout(
         except requests.RequestException as req_exc:
             pay_client_span.record_exception(req_exc)
             pay_client_span.set_status(Status(StatusCode.ERROR, description=str(req_exc)))
+            logger.error("Could not connect to payment service for order %s: %s", order_id, req_exc, extra=extra_tags, exc_info=True)
+            checkout_orders_counter.add(1, {**metric_attrs, "status": "error", "error_type": "PAYMENT_UNAVAILABLE"})
             provider.force_flush()
+            log_processor.force_flush()
+            metric_reader.force_flush()
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail=f"Could not connect to payment service: {req_exc}",
             ) from req_exc
 
-    # Flush spans
+    elapsed_ms = (time.time() - start_time) * 1000
+    logger.info("Order %s completed successfully (Reservation: %s, Payment: %s, duration: %.1fms)", order_id, reservation_id, payment_id, elapsed_ms, extra=extra_tags)
+    checkout_orders_counter.add(1, {**metric_attrs, "status": "success"})
+    checkout_pool_exhausted_gauge.set(0, metric_attrs)
+    checkout_latency_gauge.set(elapsed_ms, metric_attrs)
+
+    # Flush spans, logs, and metrics
     provider.force_flush()
+    log_processor.force_flush()
+    metric_reader.force_flush()
 
     return CheckoutResponse(
         order_id=order_id,

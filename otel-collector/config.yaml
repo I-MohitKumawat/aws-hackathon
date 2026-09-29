@@ -45,6 +45,14 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, batch]
       exporters: [otlphttp/backend, otlp/jaeger, debug]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/backend, debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/backend, debug]
   telemetry:
     logs:
       level: info

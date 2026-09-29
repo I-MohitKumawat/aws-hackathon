@@ -26,8 +26,8 @@ investigations_router = APIRouter(prefix="/investigations", tags=["Investigation
 )
 def start_investigation(
     id: str,
-    payload: InvestigationStartRequest,
     background_tasks: BackgroundTasks,
+    payload: InvestigationStartRequest = InvestigationStartRequest(),
     db: Session = Depends(get_db),
 ):
     incident = db.get(Incident, id)

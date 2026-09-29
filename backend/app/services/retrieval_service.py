@@ -30,11 +30,11 @@ def cosine_similarity(v1: List[float], v2: List[float]) -> float:
 
 def is_high_signal_evidence(ev: Evidence) -> bool:
     """
-    Identifies high-signal telemetry records (errors, critical alerts, and deployment events).
+    Identifies high-signal telemetry records (errors, critical alerts, warnings, and deployment events).
     """
     sev = (ev.severity or "").lower()
     ev_type = (ev.type or "").lower()
-    return sev in ("error", "critical") or ev_type == "deployment"
+    return sev in ("error", "critical", "warning", "warn") or ev_type in ("deployment", "event")
 
 def _sort_chronologically(evidence_items: List[Evidence]) -> List[Evidence]:
     """Sorts evidence items chronologically by timestamp ascending."""

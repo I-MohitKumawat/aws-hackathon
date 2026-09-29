@@ -93,6 +93,17 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
     );
   }
 
+  const [filterType, setFilterType] = useState<"all" | "trace" | "log" | "metric">("all");
+
+  const traceCount = evidenceList.filter((e) => e.type === "trace").length;
+  const logCount = evidenceList.filter((e) => e.type === "log").length;
+  const metricCount = evidenceList.filter((e) => e.type === "metric").length;
+
+  const filteredEvidence = evidenceList.filter((item) => {
+    if (filterType === "all") return true;
+    return item.type === filterType;
+  });
+
   return (
     <div className="space-y-8">
       {/* Back button and Header */}
@@ -220,6 +231,17 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                     </div>
                   )}
 
+                  {hyp.contradicting_evidence && hyp.contradicting_evidence.length > 0 && (
+                    <div className="flex items-center space-x-2 flex-wrap gap-1">
+                      <span className="text-rose-400 font-medium">Contradicting Evidence:</span>
+                      {hyp.contradicting_evidence.map((evId) => (
+                        <span key={evId} className="px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 font-mono">
+                          {evId}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
                   {hyp.missing_evidence.length > 0 && (
                     <div className="flex items-center space-x-2 flex-wrap gap-1">
                       <span className="text-amber-400 font-medium">Missing Evidence:</span>
@@ -246,40 +268,141 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
 
       {/* Telemetry Evidence Timeline */}
       <div className="space-y-4">
-        <h2 className="text-base font-semibold text-white">Telemetry & Evidence Timeline</h2>
-        {evidenceList.length === 0 ? (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+          <div>
+            <h2 className="text-base font-semibold text-white">Telemetry & Evidence Timeline</h2>
+            <p className="text-xs text-slate-400">
+              Unified traces, structured logs, and operational metrics correlated for this incident.
+            </p>
+          </div>
+
+          {/* Filter Pills */}
+          <div className="flex items-center space-x-1.5 bg-slate-900/80 p-1 rounded-lg border border-slate-800 text-xs">
+            <button
+              onClick={() => setFilterType("all")}
+              className={`px-2.5 py-1 rounded transition-colors ${
+                filterType === "all"
+                  ? "bg-slate-700 text-white font-medium shadow-sm"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              All ({evidenceList.length})
+            </button>
+            <button
+              onClick={() => setFilterType("trace")}
+              className={`px-2.5 py-1 rounded transition-colors ${
+                filterType === "trace"
+                  ? "bg-indigo-600 text-white font-medium shadow-sm"
+                  : "text-slate-400 hover:text-indigo-300"
+              }`}
+            >
+              Traces ({traceCount})
+            </button>
+            <button
+              onClick={() => setFilterType("log")}
+              className={`px-2.5 py-1 rounded transition-colors ${
+                filterType === "log"
+                  ? "bg-cyan-600 text-white font-medium shadow-sm"
+                  : "text-slate-400 hover:text-cyan-300"
+              }`}
+            >
+              Logs ({logCount})
+            </button>
+            <button
+              onClick={() => setFilterType("metric")}
+              className={`px-2.5 py-1 rounded transition-colors ${
+                filterType === "metric"
+                  ? "bg-emerald-600 text-white font-medium shadow-sm"
+                  : "text-slate-400 hover:text-emerald-300"
+              }`}
+            >
+              Metrics ({metricCount})
+            </button>
+          </div>
+        </div>
+
+        {filteredEvidence.length === 0 ? (
           <div className="p-8 text-center text-slate-500 text-sm border border-dashed border-slate-800 rounded-xl">
-            No telemetry evidence recorded yet.
+            {evidenceList.length === 0
+              ? "No telemetry evidence recorded yet."
+              : `No evidence found matching type "${filterType}".`}
           </div>
         ) : (
           <div className="space-y-2.5">
-            {evidenceList.map((item) => (
-              <div
-                key={item.id}
-                className="p-3.5 rounded-lg bg-slate-900/50 border border-slate-800/80 hover:border-slate-700 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
-              >
-                <div className="space-y-1">
-                  <div className="flex items-center space-x-2">
-                    <span className="font-mono text-indigo-400 font-medium">{item.id}</span>
-                    <span className="uppercase px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-semibold">
-                      {item.type}
-                    </span>
-                    {item.severity && (
-                      <span className="px-1.5 py-0.5 rounded bg-red-950/60 text-red-400 border border-red-800/50 uppercase font-semibold">
-                        {item.severity}
-                      </span>
-                    )}
-                    <span className="text-slate-400 font-mono">svc:{item.service}</span>
-                  </div>
-                  <p className="text-sm text-slate-200">{item.message}</p>
-                </div>
+            {filteredEvidence.map((item) => {
+              // Badge color depending on type
+              const typeBadgeClass =
+                item.type === "trace"
+                  ? "bg-indigo-950/80 text-indigo-300 border border-indigo-800/60"
+                  : item.type === "log"
+                  ? "bg-cyan-950/80 text-cyan-300 border border-cyan-800/60"
+                  : item.type === "metric"
+                  ? "bg-emerald-950/80 text-emerald-300 border border-emerald-800/60"
+                  : "bg-slate-800 text-slate-300 border border-slate-700";
 
-                <div className="text-slate-500 flex flex-col md:items-end font-mono">
-                  <span>{new Date(item.timestamp).toISOString()}</span>
-                  {item.trace_id && <span className="text-indigo-400">trace:{item.trace_id}</span>}
+              // Severity badge color
+              const sev = item.severity?.toLowerCase();
+              const sevBadgeClass =
+                sev === "error" || sev === "critical"
+                  ? "bg-rose-950/70 text-rose-300 border border-rose-800/60"
+                  : sev === "warn" || sev === "warning"
+                  ? "bg-amber-950/70 text-amber-300 border border-amber-800/60"
+                  : sev === "info"
+                  ? "bg-blue-950/70 text-blue-300 border border-blue-800/60"
+                  : "bg-slate-800/80 text-slate-400 border border-slate-700/60";
+
+              const meta = item.metadata || {};
+
+              return (
+                <div
+                  key={item.id}
+                  className="p-3.5 rounded-lg bg-slate-900/50 border border-slate-800/80 hover:border-slate-700 transition-colors flex flex-col md:flex-row md:items-start justify-between gap-3 text-xs"
+                >
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                      <span className="font-mono text-indigo-400 font-semibold">{item.id}</span>
+                      <span className={`uppercase px-1.5 py-0.5 rounded font-semibold text-[10px] tracking-wide ${typeBadgeClass}`}>
+                        {item.type}
+                      </span>
+                      {item.severity && (
+                        <span className={`uppercase px-1.5 py-0.5 rounded font-semibold text-[10px] ${sevBadgeClass}`}>
+                          {item.severity}
+                        </span>
+                      )}
+                      <span className="text-slate-400 font-mono">svc:{item.service}</span>
+
+                      {/* Specialized Metadata Pill */}
+                      {item.type === "trace" && meta.duration_ms !== undefined ? (
+                        <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px]">
+                          {Number(meta.duration_ms).toFixed(1)}ms
+                        </span>
+                      ) : null}
+                      {item.type === "metric" && meta.metric_name ? (
+                        <span className="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-800/40 font-mono text-[10px]">
+                          {String(meta.metric_name)}: {String(meta.value ?? "")} {String(meta.unit ?? "")}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <p className="text-sm text-slate-200 break-words font-sans">{item.message}</p>
+                  </div>
+
+                  <div className="text-slate-500 flex flex-col md:items-end font-mono text-[11px] shrink-0 space-y-0.5">
+                    <span>{new Date(item.timestamp).toISOString()}</span>
+                    {item.trace_id ? (
+                      <span className="text-indigo-400 hover:text-indigo-300" title={`Span: ${meta.span_id || "N/A"}`}>
+                        trace:{item.trace_id.slice(0, 16)}...
+                      </span>
+                    ) : null}
+                    {meta.span_id ? (
+                      <span className="text-slate-500 text-[10px]">
+                        span:{String(meta.span_id).slice(0, 8)}...
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

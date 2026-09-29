@@ -53,6 +53,93 @@ class OtlpIngestResponse(BaseModel):
     associated_spans: int
     unassociated_spans: int
 
+# --- Logs Models ---
+
+class LogRecord(OtlpBaseModel):
+    timeUnixNano: Optional[Union[str, int]] = None
+    observedTimeUnixNano: Optional[Union[str, int]] = None
+    severityNumber: Optional[Union[int, str]] = None
+    severityText: Optional[str] = None
+    body: Optional[Union[Dict[str, Any], str, Any]] = None
+    attributes: Optional[List[KeyValue]] = Field(default_factory=list)
+    flags: Optional[Union[int, str]] = None
+    traceId: Optional[str] = None
+    spanId: Optional[str] = None
+
+class ScopeLog(OtlpBaseModel):
+    scope: Optional[Scope] = None
+    logRecords: List[LogRecord] = Field(default_factory=list)
+
+class ResourceLog(OtlpBaseModel):
+    resource: Optional[Resource] = None
+    scopeLogs: List[ScopeLog] = Field(default_factory=list)
+
+class OtlpLogsPayload(OtlpBaseModel):
+    resourceLogs: List[ResourceLog] = Field(default_factory=list)
+
+class OtlpLogsIngestResponse(BaseModel):
+    accepted_logs: int
+    rejected_logs: int
+    associated_logs: int
+    unassociated_logs: int
+
+# --- Metrics Models ---
+
+class NumberDataPoint(OtlpBaseModel):
+    startTimeUnixNano: Optional[Union[str, int]] = None
+    timeUnixNano: Optional[Union[str, int]] = None
+    asInt: Optional[Union[str, int]] = None
+    asDouble: Optional[Union[str, float]] = None
+    attributes: Optional[List[KeyValue]] = Field(default_factory=list)
+
+class Gauge(OtlpBaseModel):
+    dataPoints: List[NumberDataPoint] = Field(default_factory=list)
+
+class Sum(OtlpBaseModel):
+    dataPoints: List[NumberDataPoint] = Field(default_factory=list)
+    aggregationTemporality: Optional[Union[int, str]] = None
+    isMonotonic: Optional[bool] = None
+
+class HistogramDataPoint(OtlpBaseModel):
+    startTimeUnixNano: Optional[Union[str, int]] = None
+    timeUnixNano: Optional[Union[str, int]] = None
+    count: Optional[Union[str, int]] = None
+    sum: Optional[Union[str, float]] = None
+    min: Optional[Union[str, float]] = None
+    max: Optional[Union[str, float]] = None
+    bucketCounts: Optional[List[Union[str, int]]] = Field(default_factory=list)
+    explicitBounds: Optional[List[float]] = Field(default_factory=list)
+    attributes: Optional[List[KeyValue]] = Field(default_factory=list)
+
+class Histogram(OtlpBaseModel):
+    dataPoints: List[HistogramDataPoint] = Field(default_factory=list)
+    aggregationTemporality: Optional[Union[int, str]] = None
+
+class Metric(OtlpBaseModel):
+    name: str = ""
+    description: Optional[str] = ""
+    unit: Optional[str] = ""
+    gauge: Optional[Gauge] = None
+    sum: Optional[Sum] = None
+    histogram: Optional[Histogram] = None
+
+class ScopeMetric(OtlpBaseModel):
+    scope: Optional[Scope] = None
+    metrics: List[Metric] = Field(default_factory=list)
+
+class ResourceMetric(OtlpBaseModel):
+    resource: Optional[Resource] = None
+    scopeMetrics: List[ScopeMetric] = Field(default_factory=list)
+
+class OtlpMetricsPayload(OtlpBaseModel):
+    resourceMetrics: List[ResourceMetric] = Field(default_factory=list)
+
+class OtlpMetricsIngestResponse(BaseModel):
+    accepted_metrics: int
+    rejected_metrics: int
+    associated_metrics: int
+    unassociated_metrics: int
+
 def parse_otlp_value(val: Any) -> Any:
     """Recursively unpacks OTLP AnyValue JSON object to a native Python value."""
     if not isinstance(val, dict):

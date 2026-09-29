@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import uuid
@@ -5,7 +6,7 @@ from typing import List, Optional
 from fastapi import FastAPI, Header, HTTPException, Query, status
 from pydantic import BaseModel
 
-from opentelemetry import trace
+from opentelemetry import trace, metrics
 from opentelemetry.trace import Status, StatusCode
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -13,7 +14,16 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
-# Initialize OpenTelemetry TracerProvider
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+
+# Initialize OpenTelemetry Resource
 service_name = os.getenv("OTEL_SERVICE_NAME", "inventory")
 service_version = os.getenv("SERVICE_VERSION", "1.0.0")
 environment = os.getenv("DEPLOYMENT_ENVIRONMENT", "production")
@@ -24,19 +34,47 @@ resource = Resource.create({
     "deployment.environment": environment,
 })
 
-provider = TracerProvider(resource=resource)
-
 otlp_endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", "localhost:4317")
 grpc_endpoint = otlp_endpoint.replace("http://", "").replace("https://", "")
 is_insecure = os.getenv("OTEL_EXPORTER_OTLP_INSECURE", "true").lower() in ("true", "1")
 
-otlp_exporter = OTLPSpanExporter(
-    endpoint=grpc_endpoint,
-    insecure=is_insecure,
-)
+# Tracing Setup
+provider = TracerProvider(resource=resource)
+otlp_exporter = OTLPSpanExporter(endpoint=grpc_endpoint, insecure=is_insecure)
 provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
 trace.set_tracer_provider(provider)
 tracer = trace.get_tracer("inventory.service", service_version)
+
+# Logging Setup
+logger_provider = LoggerProvider(resource=resource)
+log_processor = BatchLogRecordProcessor(OTLPLogExporter(endpoint=grpc_endpoint, insecure=is_insecure))
+logger_provider.add_log_record_processor(log_processor)
+set_logger_provider(logger_provider)
+
+log_handler = LoggingHandler(level=logging.NOTSET, logger_provider=logger_provider)
+logging.getLogger().addHandler(log_handler)
+logging.getLogger().setLevel(logging.INFO)
+logger = logging.getLogger("inventory")
+
+# Metrics Setup
+metric_reader = PeriodicExportingMetricReader(
+    OTLPMetricExporter(endpoint=grpc_endpoint, insecure=is_insecure),
+    export_interval_millis=2000,
+)
+meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
+metrics.set_meter_provider(meter_provider)
+meter = metrics.get_meter("inventory.service", service_version)
+
+inventory_reservations_counter = meter.create_counter(
+    "inventory.reservations.total",
+    description="Total inventory reservation requests",
+    unit="1",
+)
+inventory_out_of_stock_counter = meter.create_counter(
+    "inventory.stock.out_of_stock",
+    description="Total out-of-stock allocation failures",
+    unit="1",
+)
 
 app = FastAPI(
     title="Instrumented Inventory Service",
@@ -86,6 +124,12 @@ def reserve_inventory(
         current_span.set_attribute("incident.id", x_incident_id)
 
     reservation_id = f"res_{uuid.uuid4().hex[:8]}"
+    extra_tags = {"incident.id": x_incident_id, "order_id": payload.order_id} if x_incident_id else {"order_id": payload.order_id}
+    metric_attrs = {"service": service_name}
+    if x_incident_id:
+        metric_attrs["incident.id"] = x_incident_id
+
+    logger.info("Stock reservation requested for %d items (order: %s)", len(payload.items), payload.order_id, extra=extra_tags)
 
     # Span 1: Check Stock Availability
     with tracer.start_as_current_span("inventory.check_stock") as stock_span:
@@ -106,7 +150,13 @@ def reserve_inventory(
                 current_span.set_status(Status(StatusCode.ERROR, description=err_msg))
                 current_span.set_attribute("error.type", "OUT_OF_STOCK")
 
+            logger.error("Inventory allocation failed: Item 'item_beta' is out of stock in warehouse-east (requested %d items for order %s)", len(payload.items), payload.order_id, extra=extra_tags, exc_info=True)
+            inventory_reservations_counter.add(1, {**metric_attrs, "status": "out_of_stock", "error_type": "OUT_OF_STOCK"})
+            inventory_out_of_stock_counter.add(1, metric_attrs)
+
             provider.force_flush()
+            log_processor.force_flush()
+            metric_reader.force_flush()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=err_msg,
@@ -123,7 +173,12 @@ def reserve_inventory(
         reserve_span.set_attribute("inventory.lock_acquired", True)
         time.sleep(0.02)
 
+    logger.info("Reserved %d items successfully: reservation_id=%s for order %s", len(payload.items), reservation_id, payload.order_id, extra=extra_tags)
+    inventory_reservations_counter.add(1, {**metric_attrs, "status": "success"})
+
     provider.force_flush()
+    log_processor.force_flush()
+    metric_reader.force_flush()
 
     return ReserveResponse(
         reservation_id=reservation_id,

@@ -1,7 +1,9 @@
+import hashlib
+import json
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 
@@ -10,7 +12,12 @@ from ..models import Incident, Evidence
 from ..schemas.otlp import (
     OtlpTracesPayload,
     OtlpIngestResponse,
+    OtlpLogsPayload,
+    OtlpLogsIngestResponse,
+    OtlpMetricsPayload,
+    OtlpMetricsIngestResponse,
     parse_otlp_attributes,
+    parse_otlp_value,
 )
 from ..agent import EmbeddingClient, format_evidence_for_embedding
 
@@ -20,13 +27,25 @@ router = APIRouter(prefix="/otlp", tags=["OpenTelemetry"])
 
 # Regex pattern for scrubbing credentials, keys, and tokens
 SENSITIVE_KEY_PATTERN = re.compile(
-    r"(password|secret|token|auth|credential|api[_-]?key|private[_-]?key)",
+    r"(password|secret|token|auth|credential|api[_-]?key|private[_-]?key|card|cvv|credit)",
     re.IGNORECASE,
 )
 BEARER_TOKEN_PATTERN = re.compile(
     r"Bearer\s+[A-Za-z0-9\-._~+/]+=*",
     re.IGNORECASE,
 )
+PASSWORD_VALUE_PATTERN = re.compile(
+    r"(password|passwd|pwd|secret|api[_-]?key)\s*[:=]\s*[^\s,;]+",
+    re.IGNORECASE,
+)
+
+def scrub_sensitive_text(text: str) -> str:
+    """Redacts bearer tokens, passwords, and sensitive key-values embedded in text messages."""
+    if not text or not isinstance(text, str):
+        return text
+    scrubbed = BEARER_TOKEN_PATTERN.sub("Bearer [REDACTED]", text)
+    scrubbed = PASSWORD_VALUE_PATTERN.sub(r"\1=[REDACTED]", scrubbed)
+    return scrubbed
 
 def scrub_sensitive_data(attrs: Dict[str, Any]) -> Dict[str, Any]:
     """Redacts passwords, tokens, API keys, and Authorization headers."""
@@ -34,8 +53,8 @@ def scrub_sensitive_data(attrs: Dict[str, Any]) -> Dict[str, Any]:
     for k, v in attrs.items():
         if SENSITIVE_KEY_PATTERN.search(k):
             scrubbed[k] = "[REDACTED]"
-        elif isinstance(v, str) and BEARER_TOKEN_PATTERN.search(v):
-            scrubbed[k] = BEARER_TOKEN_PATTERN.sub("Bearer [REDACTED]", v)
+        elif isinstance(v, str):
+            scrubbed[k] = scrub_sensitive_text(v)
         elif isinstance(v, dict):
             scrubbed[k] = scrub_sensitive_data(v)
         else:
@@ -178,16 +197,6 @@ async def ingest_otlp_traces(payload: OtlpTracesPayload, db: Session = Depends(g
                     rejected += 1
 
     if new_evidence:
-        # Generate embeddings if EmbeddingClient is operational
-        try:
-            client = EmbeddingClient(timeout_seconds=5.0)
-            texts = [format_evidence_for_embedding(ev) for ev in new_evidence]
-            embeddings = await client.generate_embeddings_batch(texts)
-            for ev, emb in zip(new_evidence, embeddings):
-                ev.embedding = emb
-        except Exception as exc:
-            logger.debug("Skipping inline embedding for OTLP spans: %s", exc)
-
         for ev in new_evidence:
             db.add(ev)
         db.commit()
@@ -197,4 +206,317 @@ async def ingest_otlp_traces(payload: OtlpTracesPayload, db: Session = Depends(g
         rejected_spans=rejected,
         associated_spans=associated,
         unassociated_spans=unassociated,
+    )
+
+def map_log_severity(severity_text: Optional[str], severity_number: Optional[Union[int, str]]) -> str:
+    """Maps OTLP severity text or severity number to standard evidence severity."""
+    if severity_text:
+        st = severity_text.strip().lower()
+        if any(term in st for term in ("fatal", "crit")):
+            return "critical"
+        if "error" in st:
+            return "error"
+        if "warn" in st:
+            return "warning"
+        if "info" in st:
+            return "info"
+        if any(term in st for term in ("debug", "trace")):
+            return "info"
+
+    if severity_number is not None:
+        try:
+            sn = int(severity_number)
+            if sn >= 21:
+                return "critical"
+            if sn >= 17:
+                return "error"
+            if sn >= 13:
+                return "warning"
+            return "info"
+        except (ValueError, TypeError):
+            pass
+
+    return "info"
+
+def extract_log_message(body: Any) -> str:
+    """Extracts a clear log message string from OTLP AnyValue body."""
+    parsed = parse_otlp_value(body)
+    if isinstance(parsed, dict):
+        if "message" in parsed:
+            return str(parsed["message"])
+        return json.dumps(parsed)
+    return str(parsed) if parsed is not None else ""
+
+@router.post("/v1/logs", response_model=OtlpLogsIngestResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/logs", response_model=OtlpLogsIngestResponse, status_code=status.HTTP_202_ACCEPTED)
+async def ingest_otlp_logs(payload: OtlpLogsPayload, db: Session = Depends(get_db)):
+    """
+    Ingests OTLP JSON formatted log records sent by the OpenTelemetry Collector.
+    Normalizes logs into the Evidence model, prevents duplicate ingestion, scrubs
+    sensitive credentials, and links to incidents when explicit context is present.
+    """
+    accepted = 0
+    rejected = 0
+    associated = 0
+    unassociated = 0
+    new_evidence: List[Evidence] = []
+    seen_evidence_ids = set()
+
+    for resource_log in payload.resourceLogs:
+        res_attrs = parse_otlp_attributes(resource_log.resource.attributes) if resource_log.resource else {}
+        service_name = res_attrs.get("service.name", "unknown_service")
+
+        for scope_log in resource_log.scopeLogs:
+            for log_record in scope_log.logRecords:
+                try:
+                    log_attrs = parse_otlp_attributes(log_record.attributes)
+                    current_service = log_attrs.get("service.name", service_name)
+
+                    # Timestamp parsing: convert nanoseconds to UTC datetime
+                    if log_record.timeUnixNano:
+                        ts_seconds = int(log_record.timeUnixNano) / 1e9
+                        try:
+                            ts = datetime.fromtimestamp(ts_seconds, tz=timezone.utc)
+                        except (ValueError, OverflowError, OSError):
+                            ts = datetime.now(timezone.utc)
+                    elif log_record.observedTimeUnixNano:
+                        ts_seconds = int(log_record.observedTimeUnixNano) / 1e9
+                        try:
+                            ts = datetime.fromtimestamp(ts_seconds, tz=timezone.utc)
+                        except (ValueError, OverflowError, OSError):
+                            ts = datetime.now(timezone.utc)
+                    else:
+                        ts = datetime.now(timezone.utc)
+
+                    message = scrub_sensitive_text(extract_log_message(log_record.body))
+                    severity = map_log_severity(log_record.severityText, log_record.severityNumber)
+
+                    # Deduplication ID
+                    raw_id_seed = f"{current_service}_{log_record.timeUnixNano}_{log_record.traceId}_{log_record.spanId}_{message}"
+                    hash_suffix = hashlib.sha256(raw_id_seed.encode("utf-8")).hexdigest()[:16]
+                    evidence_id = f"ev_log_{hash_suffix}"
+
+                    if evidence_id in seen_evidence_ids:
+                        accepted += 1
+                        continue
+
+                    existing = db.get(Evidence, evidence_id)
+                    if existing:
+                        accepted += 1
+                        if existing.incident_id:
+                            associated += 1
+                        else:
+                            unassociated += 1
+                        continue
+
+                    seen_evidence_ids.add(evidence_id)
+
+                    # Incident association: check for explicit incident ID in log or resource attributes
+                    target_incident_id = (
+                        log_attrs.get("incident.id")
+                        or log_attrs.get("incident_id")
+                        or res_attrs.get("incident.id")
+                        or res_attrs.get("incident_id")
+                    )
+
+                    linked_incident_id: Optional[str] = None
+                    if target_incident_id:
+                        incident = db.get(Incident, str(target_incident_id))
+                        if incident:
+                            linked_incident_id = incident.id
+                            associated += 1
+                        else:
+                            unassociated += 1
+                    else:
+                        unassociated += 1
+
+                    metadata = {
+                        "severity_text": log_record.severityText,
+                        "severity_number": log_record.severityNumber,
+                        "span_id": log_record.spanId,
+                        "flags": log_record.flags,
+                        "attributes": scrub_sensitive_data(log_attrs),
+                        "resource_attributes": scrub_sensitive_data(res_attrs),
+                    }
+
+                    ev_model = Evidence(
+                        id=evidence_id,
+                        incident_id=linked_incident_id,
+                        type="log",
+                        timestamp=ts,
+                        service=current_service,
+                        severity=severity,
+                        message=message,
+                        trace_id=log_record.traceId or None,
+                        source="otel",
+                        metadata_json=metadata,
+                    )
+                    new_evidence.append(ev_model)
+                    accepted += 1
+                except Exception as exc:
+                    logger.error("Failed to parse log record: %s", exc)
+                    rejected += 1
+
+    if new_evidence:
+        for ev in new_evidence:
+            db.add(ev)
+        db.commit()
+
+    return OtlpLogsIngestResponse(
+        accepted_logs=accepted,
+        rejected_logs=rejected,
+        associated_logs=associated,
+        unassociated_logs=unassociated,
+    )
+
+@router.post("/v1/metrics", response_model=OtlpMetricsIngestResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post("/metrics", response_model=OtlpMetricsIngestResponse, status_code=status.HTTP_202_ACCEPTED)
+async def ingest_otlp_metrics(payload: OtlpMetricsPayload, db: Session = Depends(get_db)):
+    """
+    Ingests OTLP JSON formatted metric records sent by the OpenTelemetry Collector.
+    Normalizes metric data points into the Evidence model, prevents duplicate ingestion,
+    scrubs sensitive credentials, and links to incidents when explicit context is present.
+    """
+    accepted = 0
+    rejected = 0
+    associated = 0
+    unassociated = 0
+    new_evidence: List[Evidence] = []
+    seen_evidence_ids = set()
+
+    for resource_metric in payload.resourceMetrics:
+        res_attrs = parse_otlp_attributes(resource_metric.resource.attributes) if resource_metric.resource else {}
+        service_name = res_attrs.get("service.name", "unknown_service")
+
+        for scope_metric in resource_metric.scopeMetrics:
+            for metric in scope_metric.metrics:
+                # Collect data points from gauge, sum, or histogram
+                points: List[tuple[str, Any]] = []
+                if metric.gauge and metric.gauge.dataPoints:
+                    points.extend([("gauge", dp) for dp in metric.gauge.dataPoints])
+                if metric.sum and metric.sum.dataPoints:
+                    points.extend([("sum", dp) for dp in metric.sum.dataPoints])
+                if metric.histogram and metric.histogram.dataPoints:
+                    points.extend([("histogram", dp) for dp in metric.histogram.dataPoints])
+
+                for metric_type, dp in points:
+                    try:
+                        dp_attrs = parse_otlp_attributes(dp.attributes)
+                        current_service = dp_attrs.get("service.name", service_name)
+
+                        # Timestamp
+                        time_nano = getattr(dp, "timeUnixNano", None) or getattr(dp, "startTimeUnixNano", None)
+                        if time_nano:
+                            try:
+                                ts = datetime.fromtimestamp(int(time_nano) / 1e9, tz=timezone.utc)
+                            except (ValueError, OverflowError, OSError):
+                                ts = datetime.now(timezone.utc)
+                        else:
+                            ts = datetime.now(timezone.utc)
+
+                        # Value extraction
+                        val = None
+                        if hasattr(dp, "asInt") and dp.asInt is not None:
+                            val = int(dp.asInt)
+                        elif hasattr(dp, "asDouble") and dp.asDouble is not None:
+                            val = float(dp.asDouble)
+                        elif hasattr(dp, "sum") and dp.sum is not None:
+                            val = float(dp.sum)
+                        elif hasattr(dp, "count") and dp.count is not None:
+                            val = int(dp.count)
+
+                        unit_str = f" {metric.unit}" if metric.unit else ""
+                        attr_summary = ", ".join(f"{k}={v}" for k, v in dp_attrs.items() if k not in ("service.name", "incident.id", "incident_id"))
+                        attr_str = f" [{attr_summary}]" if attr_summary else ""
+
+                        message = f"Metric '{metric.name}' = {val}{unit_str}{attr_str}".strip()
+
+                        # Severity determination
+                        lower_name = metric.name.lower()
+                        is_error_metric = any(term in lower_name for term in ("fail", "error", "exhaust", "decline", "out_of_stock"))
+                        val_num = float(val) if val is not None else 0.0
+                        if is_error_metric and val_num > 0:
+                            severity = "error"
+                        elif "warning" in lower_name or "throttl" in lower_name:
+                            severity = "warning"
+                        else:
+                            severity = "info"
+
+                        # Deduplication ID
+                        raw_id_seed = f"{metric.name}_{current_service}_{time_nano}_{attr_summary}_{val}"
+                        hash_suffix = hashlib.sha256(raw_id_seed.encode("utf-8")).hexdigest()[:16]
+                        evidence_id = f"ev_metric_{hash_suffix}"
+
+                        if evidence_id in seen_evidence_ids:
+                            accepted += 1
+                            continue
+
+                        existing = db.get(Evidence, evidence_id)
+                        if existing:
+                            accepted += 1
+                            if existing.incident_id:
+                                associated += 1
+                            else:
+                                unassociated += 1
+                            continue
+
+                        seen_evidence_ids.add(evidence_id)
+
+                        # Incident association
+                        target_incident_id = (
+                            dp_attrs.get("incident.id")
+                            or dp_attrs.get("incident_id")
+                            or res_attrs.get("incident.id")
+                            or res_attrs.get("incident_id")
+                        )
+
+                        linked_incident_id: Optional[str] = None
+                        if target_incident_id:
+                            incident = db.get(Incident, str(target_incident_id))
+                            if incident:
+                                linked_incident_id = incident.id
+                                associated += 1
+                            else:
+                                unassociated += 1
+                        else:
+                            unassociated += 1
+
+                        metadata = {
+                            "metric_name": metric.name,
+                            "metric_description": metric.description,
+                            "metric_unit": metric.unit,
+                            "metric_type": metric_type,
+                            "value": val,
+                            "attributes": scrub_sensitive_data(dp_attrs),
+                            "resource_attributes": scrub_sensitive_data(res_attrs),
+                        }
+
+                        ev_model = Evidence(
+                            id=evidence_id,
+                            incident_id=linked_incident_id,
+                            type="metric",
+                            timestamp=ts,
+                            service=current_service,
+                            severity=severity,
+                            message=message,
+                            trace_id=None,
+                            source="otel",
+                            metadata_json=metadata,
+                        )
+                        new_evidence.append(ev_model)
+                        accepted += 1
+                    except Exception as exc:
+                        logger.error("Failed to parse metric data point: %s", exc)
+                        rejected += 1
+
+    if new_evidence:
+        for ev in new_evidence:
+            db.add(ev)
+        db.commit()
+
+    return OtlpMetricsIngestResponse(
+        accepted_metrics=accepted,
+        rejected_metrics=rejected,
+        associated_metrics=associated,
+        unassociated_metrics=unassociated,
     )
