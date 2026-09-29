@@ -22,7 +22,7 @@ from ..config import settings
 
 logger = logging.getLogger(__name__)
 
-PROMPT_VERSION = "1.0.0"
+PROMPT_VERSION = "1.1.0"
 
 class EvaluationReportData(dict):
     """Container for full serialized evaluation results."""

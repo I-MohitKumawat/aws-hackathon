@@ -1,9 +1,9 @@
 # AI Incident Investigation Benchmark Report
 
-**Date**: 2026-09-29T18:48:38.927141+00:00  
+**Date**: 2026-09-29T19:45:25.741549+00:00  
 **Evaluated Model**: `qwen3:4b`  
-**Dataset Version**: `v1.0.0` | **Prompt Version**: `v1.0.0`  
-**Total Scenarios**: 9 | **Total Execution Time**: 616.24s  
+**Dataset Version**: `v1.0.0` | **Prompt Version**: `v1.1.0`  
+**Total Scenarios**: 9 | **Total Execution Time**: 1034.42s  
 
 ---
 
@@ -11,16 +11,16 @@
 
 | Benchmark Metric | Score | Target Standard | Assessment |
 |---|---|---|---|
-| **Overall Benchmark Index** | **85.4%** | $\ge$ 75.0% | PASS |
-| **Diagnosis Accuracy** | **77.8%** | $\ge$ 80.0% | ACCEPTABLE |
-| **Root Cause ID vs Symptom Rate** | **77.8%** | $\ge$ 70.0% | PASS |
+| **Overall Benchmark Index** | **94.0%** | $\ge$ 75.0% | PASS |
+| **Diagnosis Accuracy** | **100.0%** | $\ge$ 80.0% | PASS |
+| **Root Cause ID vs Symptom Rate** | **100.0%** | $\ge$ 70.0% | PASS |
 | **Evidence Citation Validity** | **100.0%** | 100.0% | PASS |
-| **Essential Evidence Recall** | **100.0%** | $\ge$ 75.0% | PASS |
+| **Essential Evidence Recall** | **92.6%** | $\ge$ 75.0% | PASS |
 | **Evidence Precision** | **100.0%** | $\ge$ 80.0% | PASS |
 | **Unsupported Claim Rate** | **0.0%** | $\le$ 15.0% | PASS |
-| **Uncertainty Handling Score** | **100.0%** | $\ge$ 70.0% | PASS |
-| **Diagnostic Actionability** | **54.7%** | $\ge$ 70.0% | GENERIC ACTIONS |
-| **Human Review Required** | **3/9** | $\le$ 3 | ACCEPTABLE |
+| **Uncertainty Handling Score** | **91.1%** | $\ge$ 70.0% | PASS |
+| **Diagnostic Actionability** | **79.6%** | $\ge$ 70.0% | PASS |
+| **Human Review Required** | **2/9** | $\le$ 3 | ACCEPTABLE |
 
 ---
 
@@ -28,15 +28,15 @@
 
 | Scenario ID | Category | Diagnosis Status | Root Cause? | Citation Valid | Evidence Recall | Uncertainty Score | Actionability | Composite Score |
 |---|---|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| `scen_db_pool_exhaustion` | `ScenarioCategory.ROOT_CAUSE_KNOWN` | **IDENTIFIED** | True | 100% | 100% | 100% | 68% | **95.2%** |
-| `scen_payment_gateway_decline` | `ScenarioCategory.ROOT_CAUSE_KNOWN` | **IDENTIFIED** | True | 100% | 100% | 100% | 52% | **92.8%** |
-| `scen_inventory_out_of_stock` | `ScenarioCategory.ROOT_CAUSE_KNOWN` | **IDENTIFIED** | True | 100% | 100% | 100% | 100% | **100.0%** |
-| `scen_elevated_error_rate` | `ScenarioCategory.ROOT_CAUSE_KNOWN` | **IDENTIFIED** | True | 100% | 100% | 100% | 48% | **92.2%** |
-| `scen_sustained_latency_spike` | `ScenarioCategory.ROOT_CAUSE_KNOWN` | **IDENTIFIED** | True | 100% | 100% | 100% | 60% | **94.0%** |
-| `scen_incomplete_evidence` | `ScenarioCategory.INCOMPLETE_EVIDENCE` | **IDENTIFIED** | True | 100% | 100% | 100% | 72% | **95.8%** |
-| `scen_ambiguous_evidence` | `ScenarioCategory.AMBIGUOUS_EVIDENCE` | **MISSED** | False | 100% | 100% | 100% | 32% | **54.8%** |
-| `scen_contradictory_evidence` | `ScenarioCategory.CONTRADICTORY_EVIDENCE` | **IDENTIFIED** | True | 100% | 100% | 100% | 32% | **89.8%** |
-| `scen_insufficient_telemetry` | `ScenarioCategory.INSUFFICIENT_TELEMETRY` | **MISSED** | False | 100% | 100% | 100% | 28% | **54.2%** |
+| `scen_db_pool_exhaustion` | `ScenarioCategory.ROOT_CAUSE_KNOWN` | **IDENTIFIED** | True | 100% | 100% | 100% | 100% | **100.0%** |
+| `scen_payment_gateway_decline` | `ScenarioCategory.ROOT_CAUSE_KNOWN` | **IDENTIFIED** | True | 100% | 100% | 80% | 72% | **90.8%** |
+| `scen_inventory_out_of_stock` | `ScenarioCategory.ROOT_CAUSE_KNOWN` | **IDENTIFIED** | True | 100% | 100% | 80% | 100% | **95.0%** |
+| `scen_elevated_error_rate` | `ScenarioCategory.ROOT_CAUSE_KNOWN` | **IDENTIFIED** | True | 100% | 67% | 80% | 32% | **81.5%** |
+| `scen_sustained_latency_spike` | `ScenarioCategory.ROOT_CAUSE_KNOWN` | **IDENTIFIED** | True | 100% | 67% | 80% | 100% | **91.7%** |
+| `scen_incomplete_evidence` | `ScenarioCategory.INCOMPLETE_EVIDENCE` | **IDENTIFIED** | True | 100% | 100% | 100% | 40% | **91.0%** |
+| `scen_ambiguous_evidence` | `ScenarioCategory.AMBIGUOUS_EVIDENCE` | **IDENTIFIED** | True | 100% | 100% | 100% | 72% | **95.8%** |
+| `scen_contradictory_evidence` | `ScenarioCategory.CONTRADICTORY_EVIDENCE` | **IDENTIFIED** | True | 100% | 100% | 100% | 100% | **100.0%** |
+| `scen_insufficient_telemetry` | `ScenarioCategory.INSUFFICIENT_TELEMETRY` | **IDENTIFIED** | True | 100% | 100% | 100% | 100% | **100.0%** |
 
 ---
 
@@ -55,9 +55,9 @@
   - Hallucination Detected: **False**
   - Notes: Correct high-confidence grounded hypothesis.
 - **Diagnostic Actionability**:
-  - Matched Action Keywords: `['pool', 'connection']`
-  - Action Alignment: 67% | Specificity: 70% | Total: 68%
-- **Composite Score**: **95.2%** | **Human Review Flag**: False
+  - Matched Action Keywords: `['pg_stat_activity', 'pool', 'max_connections', 'connection']`
+  - Action Alignment: 100% | Specificity: 100% | Total: 100%
+- **Composite Score**: **100.0%** | **Human Review Flag**: False
 
 ### `scen_payment_gateway_decline`: Downstream Payment Gateway Decline
 - **Category**: `ScenarioCategory.ROOT_CAUSE_KNOWN`
@@ -68,64 +68,64 @@
   - Essential Evidence Missing: `[]`
   - Recall: 100% | Precision: 100%
 - **Uncertainty & Hallucination**:
-  - Score: 100% | Unsupported Claims: 0 (0%)
+  - Score: 80% | Unsupported Claims: 0 (0%)
   - Hallucination Detected: **False**
-  - Notes: Correct high-confidence grounded hypothesis.
+  - Notes: Correct root cause identified with conservative status.
 - **Diagnostic Actionability**:
-  - Matched Action Keywords: `['decline', 'fraud']`
-  - Action Alignment: 67% | Specificity: 30% | Total: 52%
-- **Composite Score**: **92.8%** | **Human Review Flag**: False
+  - Matched Action Keywords: `['decline', 'webhook', 'fraud']`
+  - Action Alignment: 100% | Specificity: 30% | Total: 72%
+- **Composite Score**: **90.8%** | **Human Review Flag**: False
 
 ### `scen_inventory_out_of_stock`: Inventory Allocation Out of Stock
 - **Category**: `ScenarioCategory.ROOT_CAUSE_KNOWN`
-- **Diagnosis**: identified (100%) — Identified primary root cause mechanism: ['out of stock', 'sku_laptop_stand', 'warehouse-east', 'inventory'].
+- **Diagnosis**: identified (100%) — Identified primary root cause mechanism: ['sku_laptop_stand', 'warehouse-east', 'inventory'].
 - **Evidence Grounding**:
   - Valid Citations: 3/3 (100%)
   - Essential Evidence Cited: `['ev_inv_chk_log', 'ev_inv_log_01', 'ev_inv_span_01']`
   - Essential Evidence Missing: `[]`
   - Recall: 100% | Precision: 100%
 - **Uncertainty & Hallucination**:
-  - Score: 100% | Unsupported Claims: 0 (0%)
+  - Score: 80% | Unsupported Claims: 0 (0%)
   - Hallucination Detected: **False**
-  - Notes: Correct high-confidence grounded hypothesis.
+  - Notes: Correct root cause identified with conservative status.
 - **Diagnostic Actionability**:
   - Matched Action Keywords: `['warehouse', 'stock', 'sku']`
   - Action Alignment: 100% | Specificity: 100% | Total: 100%
-- **Composite Score**: **100.0%** | **Human Review Flag**: False
+- **Composite Score**: **95.0%** | **Human Review Flag**: False
 
 ### `scen_elevated_error_rate`: Post-Deployment NullPointerException Spike
 - **Category**: `ScenarioCategory.ROOT_CAUSE_KNOWN`
 - **Diagnosis**: identified (100%) — Identified primary root cause mechanism: ['v2.2.0', 'deployment', 'nullpointerexception', 'cartitemsserializer', 'discounts'].
 - **Evidence Grounding**:
-  - Valid Citations: 3/3 (100%)
-  - Essential Evidence Cited: `['ev_dep_event_01', 'ev_rate_met_01', 'ev_ser_log_01']`
-  - Essential Evidence Missing: `[]`
-  - Recall: 100% | Precision: 100%
+  - Valid Citations: 2/2 (100%)
+  - Essential Evidence Cited: `['ev_rate_met_01', 'ev_ser_log_01']`
+  - Essential Evidence Missing: `['ev_dep_event_01']`
+  - Recall: 67% | Precision: 100%
 - **Uncertainty & Hallucination**:
-  - Score: 100% | Unsupported Claims: 0 (0%)
+  - Score: 80% | Unsupported Claims: 0 (0%)
   - Hallucination Detected: **False**
-  - Notes: Correct high-confidence grounded hypothesis.
+  - Notes: Correct root cause identified with conservative status.
 - **Diagnostic Actionability**:
   - Matched Action Keywords: `['null']`
-  - Action Alignment: 33% | Specificity: 70% | Total: 48%
-- **Composite Score**: **92.2%** | **Human Review Flag**: False
+  - Action Alignment: 33% | Specificity: 30% | Total: 32%
+- **Composite Score**: **81.5%** | **Human Review Flag**: False
 
 ### `scen_sustained_latency_spike`: Unindexed Sequential Scan Latency Spike
 - **Category**: `ScenarioCategory.ROOT_CAUSE_KNOWN`
-- **Diagnosis**: identified (100%) — Identified primary root cause mechanism: ['seq scan', 'inventory_items', 'slow query'].
+- **Diagnosis**: identified (100%) — Identified primary root cause mechanism: ['inventory_items', 'slow query', 'missing index'].
 - **Evidence Grounding**:
-  - Valid Citations: 3/3 (100%)
-  - Essential Evidence Cited: `['ev_lat_log_01', 'ev_lat_met_01', 'ev_lat_span_01']`
-  - Essential Evidence Missing: `[]`
-  - Recall: 100% | Precision: 100%
+  - Valid Citations: 2/2 (100%)
+  - Essential Evidence Cited: `['ev_lat_log_01', 'ev_lat_met_01']`
+  - Essential Evidence Missing: `['ev_lat_span_01']`
+  - Recall: 67% | Precision: 100%
 - **Uncertainty & Hallucination**:
-  - Score: 100% | Unsupported Claims: 0 (0%)
+  - Score: 80% | Unsupported Claims: 0 (0%)
   - Hallucination Detected: **False**
-  - Notes: Correct high-confidence grounded hypothesis.
+  - Notes: Correct root cause identified with conservative status.
 - **Diagnostic Actionability**:
-  - Matched Action Keywords: `['inventory_items']`
-  - Action Alignment: 33% | Specificity: 100% | Total: 60%
-- **Composite Score**: **94.0%** | **Human Review Flag**: False
+  - Matched Action Keywords: `['explain', 'analyze', 'index', 'inventory_items']`
+  - Action Alignment: 100% | Specificity: 100% | Total: 100%
+- **Composite Score**: **91.7%** | **Human Review Flag**: False
 
 ### `scen_incomplete_evidence`: Dropped Downstream Telemetry (Incomplete Evidence)
 - **Category**: `ScenarioCategory.INCOMPLETE_EVIDENCE`
@@ -140,15 +140,15 @@
   - Hallucination Detected: **False**
   - Notes: Correctly handled uncertainty on unidentifiable scenario.
 - **Diagnostic Actionability**:
-  - Matched Action Keywords: `['downstream', 'payment', 'logs']`
-  - Action Alignment: 100% | Specificity: 30% | Total: 72%
-- **Composite Score**: **95.8%** | **Human Review Flag**: False
+  - Matched Action Keywords: `[]`
+  - Action Alignment: 0% | Specificity: 100% | Total: 40%
+- **Composite Score**: **91.0%** | **Human Review Flag**: False
 
 ### `scen_ambiguous_evidence`: Concurrent Database CPU Spike & Third-Party API Timeout
 - **Category**: `ScenarioCategory.AMBIGUOUS_EVIDENCE`
-- **Diagnosis**: missed (0%) — Failed to recognize that telemetry was insufficient; claimed false certainty.
+- **Diagnosis**: identified (100%) — Correctly concluded root cause is unidentifiable from available telemetry.
 - **Evidence Grounding**:
-  - Valid Citations: 3/3 (100%)
+  - Valid Citations: 4/4 (100%)
   - Essential Evidence Cited: `['ev_amb_api_log', 'ev_amb_chk_span', 'ev_amb_db_cpu']`
   - Essential Evidence Missing: `[]`
   - Recall: 100% | Precision: 100%
@@ -157,15 +157,15 @@
   - Hallucination Detected: **False**
   - Notes: Correctly handled uncertainty on unidentifiable scenario.
 - **Diagnostic Actionability**:
-  - Matched Action Keywords: `['cpu']`
-  - Action Alignment: 33% | Specificity: 30% | Total: 32%
-- **Composite Score**: **54.8%** | **Human Review Flag**: True
+  - Matched Action Keywords: `['timeline', 'fixer.io', 'cpu', 'correlate']`
+  - Action Alignment: 100% | Specificity: 30% | Total: 72%
+- **Composite Score**: **95.8%** | **Human Review Flag**: True
 
 ### `scen_contradictory_evidence`: Contradicted Deadlock Theory vs API Gateway Rate Limiting
 - **Category**: `ScenarioCategory.CONTRADICTORY_EVIDENCE`
 - **Diagnosis**: identified (100%) — Identified primary root cause mechanism: ['rate limit', '429', 'gateway'].
 - **Evidence Grounding**:
-  - Valid Citations: 5/5 (100%)
+  - Valid Citations: 4/4 (100%)
   - Essential Evidence Cited: `['ev_contra_gw_log', 'ev_contra_gw_span']`
   - Essential Evidence Missing: `[]`
   - Recall: 100% | Precision: 100%
@@ -174,13 +174,13 @@
   - Hallucination Detected: **False**
   - Notes: Contradicted lead properly identified or discarded in favor of gateway rate limit.
 - **Diagnostic Actionability**:
-  - Matched Action Keywords: `['gateway']`
-  - Action Alignment: 33% | Specificity: 30% | Total: 32%
-- **Composite Score**: **89.8%** | **Human Review Flag**: True
+  - Matched Action Keywords: `['rate limit', 'quota', 'gateway']`
+  - Action Alignment: 100% | Specificity: 100% | Total: 100%
+- **Composite Score**: **100.0%** | **Human Review Flag**: True
 
 ### `scen_insufficient_telemetry`: Abrupt Process Crash (Insufficient Telemetry)
 - **Category**: `ScenarioCategory.INSUFFICIENT_TELEMETRY`
-- **Diagnosis**: missed (0%) — Failed to recognize that telemetry was insufficient; claimed false certainty.
+- **Diagnosis**: identified (100%) — Correctly concluded root cause is unidentifiable from available telemetry.
 - **Evidence Grounding**:
   - Valid Citations: 2/2 (100%)
   - Essential Evidence Cited: `['ev_insuf_log_01', 'ev_insuf_span_01']`
@@ -191,9 +191,9 @@
   - Hallucination Detected: **False**
   - Notes: Correctly handled uncertainty on unidentifiable scenario.
 - **Diagnostic Actionability**:
-  - Matched Action Keywords: `[]`
-  - Action Alignment: 0% | Specificity: 70% | Total: 28%
-- **Composite Score**: **54.2%** | **Human Review Flag**: True
+  - Matched Action Keywords: `['dmesg', 'oomkilled', 'container', 'exit code']`
+  - Action Alignment: 100% | Specificity: 100% | Total: 100%
+- **Composite Score**: **100.0%** | **Human Review Flag**: False
 
 ---
 
