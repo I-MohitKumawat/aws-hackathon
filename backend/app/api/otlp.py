@@ -2,7 +2,7 @@ import hashlib
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Union
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..database import get_db
 from ..models import Incident, Evidence
+from ..core.auth import Role, require_roles
+from ..core.exceptions import AppException
 from ..services.detection_service import detection_service
 from ..schemas.otlp import (
     OtlpTracesPayload,
@@ -24,6 +26,39 @@ from ..schemas.otlp import (
 from ..agent import EmbeddingClient, format_evidence_for_embedding
 
 logger = logging.getLogger(__name__)
+
+def commit_evidence_resiliently(db: Session, evidence_list: List[Evidence]) -> bool:
+    """
+    Safely commits evidence batch with 1 automatic retry on transient DB errors.
+    If commit fails, rolls back and returns False to prevent false acceptance reports.
+    """
+    if not evidence_list:
+        return True
+    try:
+        for ev in evidence_list:
+            db.add(ev)
+        db.commit()
+        return True
+    except Exception as exc:
+        logger.warning("Initial DB commit failed: %s. Retrying after rollback...", exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        import time
+        time.sleep(0.1)
+        try:
+            for ev in evidence_list:
+                db.add(ev)
+            db.commit()
+            return True
+        except Exception as retry_exc:
+            logger.error("DB commit failed after retry. Telemetry dropped: %s", retry_exc)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            return False
 
 router = APIRouter(prefix="/otlp", tags=["OpenTelemetry"])
 
@@ -79,18 +114,37 @@ def extract_span_message(span_name: str, service_name: str, status_message: Opti
 
 @router.post("/v1/traces", response_model=OtlpIngestResponse, status_code=status.HTTP_202_ACCEPTED)
 @router.post("/traces", response_model=OtlpIngestResponse, status_code=status.HTTP_202_ACCEPTED)
-async def ingest_otlp_traces(payload: OtlpTracesPayload, db: Session = Depends(get_db)):
+async def ingest_otlp_traces(
+    payload: OtlpTracesPayload,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.TELEMETRY_COLLECTOR.value, Role.ADMIN.value])),
+):
     """
     Ingests OTLP JSON formatted trace spans sent by the OpenTelemetry Collector.
     Normalizes traces into the Evidence model, prevents replay duplicates, scrubs
     sensitive credentials, and links to incidents when explicit context is present.
     """
+    # Enforce batch size limit
+    total_spans = sum(
+        len(scope_span.spans)
+        for resource_span in payload.resourceSpans
+        for scope_span in resource_span.scopeSpans
+    )
+    if total_spans > settings.MAX_TELEMETRY_BATCH_SIZE:
+        raise AppException(
+            status_code=422,
+            code="BATCH_SIZE_EXCEEDED",
+            message=f"Trace batch size ({total_spans}) exceeds maximum limit of {settings.MAX_TELEMETRY_BATCH_SIZE}.",
+            details={"batch_size": total_spans, "max_limit": settings.MAX_TELEMETRY_BATCH_SIZE},
+        )
+
     accepted = 0
     rejected = 0
     associated = 0
     unassociated = 0
     new_evidence: List[Evidence] = []
     seen_evidence_ids = set()
+    max_future_time = datetime.now(timezone.utc) + timedelta(hours=24)
 
     for resource_span in payload.resourceSpans:
         res_attrs = parse_otlp_attributes(resource_span.resource.attributes) if resource_span.resource else {}
@@ -127,6 +181,10 @@ async def ingest_otlp_traces(payload: OtlpTracesPayload, db: Session = Depends(g
                         ts = datetime.fromtimestamp(ts_seconds, tz=timezone.utc)
                     else:
                         ts = datetime.now(timezone.utc)
+                    if ts > max_future_time:
+                        logger.warning("Rejecting span with future timestamp: %s > %s", ts, max_future_time)
+                        rejected += 1
+                        continue
 
                     # Parse events (such as exceptions)
                     parsed_events = []
@@ -199,11 +257,11 @@ async def ingest_otlp_traces(payload: OtlpTracesPayload, db: Session = Depends(g
                     rejected += 1
 
     if new_evidence:
-        for ev in new_evidence:
-            db.add(ev)
-        db.commit()
-
-        if settings.AUTO_DETECTION_ENABLED and unassociated > 0:
+        success = commit_evidence_resiliently(db, new_evidence)
+        if not success:
+            rejected += len(new_evidence)
+            accepted -= len(new_evidence)
+        elif settings.AUTO_DETECTION_ENABLED and unassociated > 0:
             has_signal = any(
                 ev.incident_id is None and (
                     ev.severity in ["error", "fatal", "critical"]
@@ -265,18 +323,37 @@ def extract_log_message(body: Any) -> str:
 
 @router.post("/v1/logs", response_model=OtlpLogsIngestResponse, status_code=status.HTTP_202_ACCEPTED)
 @router.post("/logs", response_model=OtlpLogsIngestResponse, status_code=status.HTTP_202_ACCEPTED)
-async def ingest_otlp_logs(payload: OtlpLogsPayload, db: Session = Depends(get_db)):
+async def ingest_otlp_logs(
+    payload: OtlpLogsPayload,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.TELEMETRY_COLLECTOR.value, Role.ADMIN.value])),
+):
     """
     Ingests OTLP JSON formatted log records sent by the OpenTelemetry Collector.
     Normalizes logs into the Evidence model, prevents duplicate ingestion, scrubs
     sensitive credentials, and links to incidents when explicit context is present.
     """
+    # Enforce batch size limit
+    total_logs = sum(
+        len(scope_log.logRecords)
+        for resource_log in payload.resourceLogs
+        for scope_log in resource_log.scopeLogs
+    )
+    if total_logs > settings.MAX_TELEMETRY_BATCH_SIZE:
+        raise AppException(
+            status_code=422,
+            code="BATCH_SIZE_EXCEEDED",
+            message=f"Log batch size ({total_logs}) exceeds maximum limit of {settings.MAX_TELEMETRY_BATCH_SIZE}.",
+            details={"batch_size": total_logs, "max_limit": settings.MAX_TELEMETRY_BATCH_SIZE},
+        )
+
     accepted = 0
     rejected = 0
     associated = 0
     unassociated = 0
     new_evidence: List[Evidence] = []
     seen_evidence_ids = set()
+    max_future_time = datetime.now(timezone.utc) + timedelta(hours=24)
 
     for resource_log in payload.resourceLogs:
         res_attrs = parse_otlp_attributes(resource_log.resource.attributes) if resource_log.resource else {}
@@ -303,6 +380,11 @@ async def ingest_otlp_logs(payload: OtlpLogsPayload, db: Session = Depends(get_d
                             ts = datetime.now(timezone.utc)
                     else:
                         ts = datetime.now(timezone.utc)
+
+                    if ts > max_future_time:
+                        logger.warning("Rejecting log with future timestamp: %s > %s", ts, max_future_time)
+                        rejected += 1
+                        continue
 
                     message = scrub_sensitive_text(extract_log_message(log_record.body))
                     severity = map_log_severity(log_record.severityText, log_record.severityNumber)
@@ -374,11 +456,11 @@ async def ingest_otlp_logs(payload: OtlpLogsPayload, db: Session = Depends(get_d
                     rejected += 1
 
     if new_evidence:
-        for ev in new_evidence:
-            db.add(ev)
-        db.commit()
-
-        if settings.AUTO_DETECTION_ENABLED and unassociated > 0:
+        success = commit_evidence_resiliently(db, new_evidence)
+        if not success:
+            rejected += len(new_evidence)
+            accepted -= len(new_evidence)
+        elif settings.AUTO_DETECTION_ENABLED and unassociated > 0:
             has_signal = any(
                 ev.incident_id is None and ev.severity in ["error", "fatal", "critical"]
                 for ev in new_evidence
@@ -398,18 +480,42 @@ async def ingest_otlp_logs(payload: OtlpLogsPayload, db: Session = Depends(get_d
 
 @router.post("/v1/metrics", response_model=OtlpMetricsIngestResponse, status_code=status.HTTP_202_ACCEPTED)
 @router.post("/metrics", response_model=OtlpMetricsIngestResponse, status_code=status.HTTP_202_ACCEPTED)
-async def ingest_otlp_metrics(payload: OtlpMetricsPayload, db: Session = Depends(get_db)):
+async def ingest_otlp_metrics(
+    payload: OtlpMetricsPayload,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.TELEMETRY_COLLECTOR.value, Role.ADMIN.value])),
+):
     """
     Ingests OTLP JSON formatted metric records sent by the OpenTelemetry Collector.
     Normalizes metric data points into the Evidence model, prevents duplicate ingestion,
     scrubs sensitive credentials, and links to incidents when explicit context is present.
     """
+    # Enforce batch size limit
+    total_metrics = sum(
+        sum(
+            len(getattr(metric, dt).dataPoints)
+            for dt in ("gauge", "sum", "histogram")
+            if getattr(metric, dt) and getattr(metric, dt).dataPoints
+        )
+        for resource_metric in payload.resourceMetrics
+        for scope_metric in resource_metric.scopeMetrics
+        for metric in scope_metric.metrics
+    )
+    if total_metrics > settings.MAX_TELEMETRY_BATCH_SIZE:
+        raise AppException(
+            status_code=422,
+            code="BATCH_SIZE_EXCEEDED",
+            message=f"Metric batch size ({total_metrics}) exceeds maximum limit of {settings.MAX_TELEMETRY_BATCH_SIZE}.",
+            details={"batch_size": total_metrics, "max_limit": settings.MAX_TELEMETRY_BATCH_SIZE},
+        )
+
     accepted = 0
     rejected = 0
     associated = 0
     unassociated = 0
     new_evidence: List[Evidence] = []
     seen_evidence_ids = set()
+    max_future_time = datetime.now(timezone.utc) + timedelta(hours=24)
 
     for resource_metric in payload.resourceMetrics:
         res_attrs = parse_otlp_attributes(resource_metric.resource.attributes) if resource_metric.resource else {}
@@ -440,6 +546,10 @@ async def ingest_otlp_metrics(payload: OtlpMetricsPayload, db: Session = Depends
                                 ts = datetime.now(timezone.utc)
                         else:
                             ts = datetime.now(timezone.utc)
+                        if ts > max_future_time:
+                            logger.warning("Rejecting metric data point with future timestamp: %s > %s", ts, max_future_time)
+                            rejected += 1
+                            continue
 
                         # Value extraction
                         val = None
@@ -537,11 +647,11 @@ async def ingest_otlp_metrics(payload: OtlpMetricsPayload, db: Session = Depends
                         rejected += 1
 
     if new_evidence:
-        for ev in new_evidence:
-            db.add(ev)
-        db.commit()
-
-        if settings.AUTO_DETECTION_ENABLED and unassociated > 0:
+        success = commit_evidence_resiliently(db, new_evidence)
+        if not success:
+            rejected += len(new_evidence)
+            accepted -= len(new_evidence)
+        elif settings.AUTO_DETECTION_ENABLED and unassociated > 0:
             has_signal = any(
                 ev.incident_id is None and ev.severity in ["error", "fatal", "critical"]
                 for ev in new_evidence

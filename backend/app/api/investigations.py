@@ -14,6 +14,7 @@ from ..schemas import (
     Hypothesis,
 )
 from ..core.exceptions import AppException
+from ..core.auth import Role, require_roles
 from ..services.investigation_service import execute_investigation
 
 incident_investigations_router = APIRouter(prefix="/incidents", tags=["Investigations"])
@@ -29,6 +30,7 @@ def start_investigation(
     background_tasks: BackgroundTasks,
     payload: InvestigationStartRequest = InvestigationStartRequest(),
     db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.INVESTIGATOR.value, Role.ADMIN.value])),
 ):
     incident = db.get(Incident, id)
     if not incident:
@@ -84,7 +86,11 @@ def start_investigation(
     )
 
 @investigations_router.get("/{job_id}", response_model=InvestigationJobStatusResponse)
-def get_investigation_status(job_id: str, db: Session = Depends(get_db)):
+def get_investigation_status(
+    job_id: str,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.VIEWER.value, Role.INVESTIGATOR.value, Role.ADMIN.value])),
+):
     job = db.get(InvestigationJob, job_id)
     if not job:
         raise AppException(
@@ -96,7 +102,11 @@ def get_investigation_status(job_id: str, db: Session = Depends(get_db)):
     return job
 
 @investigations_router.get("/{job_id}/report", response_model=InvestigationReportResponse)
-def get_investigation_report(job_id: str, db: Session = Depends(get_db)):
+def get_investigation_report(
+    job_id: str,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.VIEWER.value, Role.INVESTIGATOR.value, Role.ADMIN.value])),
+):
     job = db.get(InvestigationJob, job_id)
     if not job:
         raise AppException(

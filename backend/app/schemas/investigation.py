@@ -27,6 +27,8 @@ class InvestigationJobStatusResponse(BaseModel):
     progress: Optional[int] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
+    retry_count: int = 0
+    max_retries: int = 2
     error: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

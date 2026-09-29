@@ -15,12 +15,17 @@ from ..schemas import (
     TelemetryAssociationResponse,
 )
 from ..core.exceptions import AppException
+from ..core.auth import Role, require_roles
 from ..services.detection_service import detection_service
 
 router = APIRouter(prefix="/incidents", tags=["Incidents"])
 
 @router.post("", response_model=IncidentResponse, status_code=status.HTTP_201_CREATED)
-def create_incident(payload: IncidentCreate, db: Session = Depends(get_db)):
+def create_incident(
+    payload: IncidentCreate,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.INVESTIGATOR.value, Role.ADMIN.value])),
+):
     incident = Incident(
         title=payload.title,
         service=payload.service,
@@ -45,6 +50,7 @@ def list_incidents(
     status: Optional[str] = Query(default=None),
     source: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.VIEWER.value, Role.INVESTIGATOR.value, Role.ADMIN.value])),
 ):
     query = select(Incident)
     count_query = select(func.count(Incident.id))
@@ -73,6 +79,7 @@ def run_detection_evaluation(
     window_seconds: Optional[int] = Query(default=None, ge=5, le=3600),
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.INVESTIGATOR.value, Role.ADMIN.value])),
 ):
     """
     Triggers an incident detection cycle across recent unlinked telemetry.
@@ -86,7 +93,11 @@ def run_detection_evaluation(
     )
 
 @router.get("/{id}", response_model=IncidentResponse)
-def get_incident(id: str, db: Session = Depends(get_db)):
+def get_incident(
+    id: str,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.VIEWER.value, Role.INVESTIGATOR.value, Role.ADMIN.value])),
+):
     incident = db.get(Incident, id)
     if not incident:
         raise AppException(
@@ -98,7 +109,12 @@ def get_incident(id: str, db: Session = Depends(get_db)):
     return incident
 
 @router.patch("/{id}")
-def update_incident(id: str, payload: IncidentUpdate, db: Session = Depends(get_db)):
+def update_incident(
+    id: str,
+    payload: IncidentUpdate,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.INVESTIGATOR.value, Role.ADMIN.value])),
+):
     incident = db.get(Incident, id)
     if not incident:
         raise AppException(
@@ -131,6 +147,7 @@ def associate_telemetry_to_incident(
     id: str,
     payload: Optional[TelemetryAssociationRequest] = None,
     db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.INVESTIGATOR.value, Role.ADMIN.value])),
 ):
     """
     Explicitly associates unassigned telemetry evidence with the specified incident
@@ -174,7 +191,11 @@ def associate_telemetry_to_incident(
     )
 
 @router.post("/{id}/resolve", response_model=IncidentResponse)
-def resolve_incident(id: str, db: Session = Depends(get_db)):
+def resolve_incident(
+    id: str,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.INVESTIGATOR.value, Role.ADMIN.value])),
+):
     """
     Marks an active incident as resolved, recording the ended_at timestamp.
     """
@@ -191,4 +212,3 @@ def resolve_incident(id: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(incident)
     return incident
-

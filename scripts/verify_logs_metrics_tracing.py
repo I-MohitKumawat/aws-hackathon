@@ -67,7 +67,7 @@ def run_verification():
     log("2. Starting Step 6 Multi-Modal Telemetry Verification")
     log("=" * 75)
 
-    client = requests.Client(timeout=30.0)
+    client = requests.Client(timeout=30.0, headers={"X-API-Key": "dev-admin-key"})
 
     # 1. Create Incident
     log("\n--- Step 1: Declaring Multi-Service Incident ---")

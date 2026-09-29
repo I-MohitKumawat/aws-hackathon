@@ -22,6 +22,7 @@ import httpx as requests
 from datetime import datetime, timezone
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000/api/v1")
+AUTH_HEADERS = {"X-API-Key": "dev-admin-key"}
 CHECKOUT_URL = os.getenv("CHECKOUT_URL", "http://localhost:8080")
 INVENTORY_URL = os.getenv("INVENTORY_URL", "http://localhost:8081")
 PAYMENT_URL = os.getenv("PAYMENT_URL", "http://localhost:8082")
@@ -71,7 +72,7 @@ def run_verification():
         "started_at": datetime.now(timezone.utc).isoformat(),
         "description": "Production incidents across Checkout, Inventory, and Payment microservices.",
     }
-    r = requests.post(f"{BACKEND_URL}/incidents", json=inc_payload)
+    r = requests.post(f"{BACKEND_URL}/incidents", json=inc_payload, headers=AUTH_HEADERS)
     r.raise_for_status()
     incident_id = r.json()["id"]
     log(f"Incident created successfully: ID={incident_id}")
@@ -99,7 +100,7 @@ def run_verification():
 
     # 3. Verify Backend Trace Correlation
     log("\n--- Step 3: Verifying Ingested Spans & Cross-Service Correlation ---")
-    ev_r = requests.get(f"{BACKEND_URL}/incidents/{incident_id}/evidence")
+    ev_r = requests.get(f"{BACKEND_URL}/incidents/{incident_id}/evidence", headers=AUTH_HEADERS)
     assert ev_r.status_code == 200
     evidence_items = ev_r.json().get("items", [])
     log(f"Retrieved {len(evidence_items)} total evidence items linked to incident.")
@@ -110,7 +111,7 @@ def run_verification():
     log(f"Identified distributed transaction Trace ID: {normal_trace_id}")
 
     # Query Backend Trace Correlation API
-    t_r = requests.get(f"{BACKEND_URL}/traces/{normal_trace_id}")
+    t_r = requests.get(f"{BACKEND_URL}/traces/{normal_trace_id}", headers=AUTH_HEADERS)
     assert t_r.status_code == 200, f"Failed to fetch trace: {t_r.text}"
     trace_data = t_r.json()
 
@@ -175,7 +176,7 @@ def run_verification():
     error_items = []
     for attempt in range(12):
         time.sleep(1)
-        ev_r = requests.get(f"{BACKEND_URL}/incidents/{incident_id}/evidence")
+        ev_r = requests.get(f"{BACKEND_URL}/incidents/{incident_id}/evidence", headers=AUTH_HEADERS)
         assert ev_r.status_code == 200
         ev_items = ev_r.json().get("items", [])
         error_items = [ev for ev in ev_items if ev["severity"] == "error"]
@@ -204,13 +205,13 @@ def run_verification():
             "end": "2026-12-31T23:59:59Z",
         }
     }
-    job_r = requests.post(f"{BACKEND_URL}/incidents/{incident_id}/investigations", json=job_payload)
+    job_r = requests.post(f"{BACKEND_URL}/incidents/{incident_id}/investigations", json=job_payload, headers=AUTH_HEADERS)
     assert job_r.status_code == 202, f"Failed to start investigation: {job_r.text}"
     job_id = job_r.json()["job_id"]
     log(f"Investigation job queued: {job_id}. Polling for completion...")
 
     for _ in range(90):
-        status_r = requests.get(f"{BACKEND_URL}/investigations/{job_id}")
+        status_r = requests.get(f"{BACKEND_URL}/investigations/{job_id}", headers=AUTH_HEADERS)
         assert status_r.status_code == 200
         job_status = status_r.json()["status"]
         if job_status in ("completed", "failed"):
@@ -218,7 +219,7 @@ def run_verification():
         time.sleep(2)
 
     assert job_status == "completed", f"Investigation job failed or timed out (status: {job_status})"
-    report_r = requests.get(f"{BACKEND_URL}/investigations/{job_id}/report")
+    report_r = requests.get(f"{BACKEND_URL}/investigations/{job_id}/report", headers=AUTH_HEADERS)
     assert report_r.status_code == 200
     report = report_r.json()
 

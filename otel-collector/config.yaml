@@ -21,6 +21,8 @@ exporters:
     endpoint: http://backend:8000/api/v1/otlp
     encoding: json
     compression: none
+    headers:
+      X-API-Key: "dev-collector-key"
     retry_on_failure:
       enabled: true
       initial_interval: 1s

@@ -7,6 +7,7 @@ from ..database import get_db
 from ..models import Incident, Evidence
 from ..schemas import EvidenceListResponse, EvidenceResponse
 from ..core.exceptions import AppException
+from ..core.auth import Role, require_roles
 
 router = APIRouter(prefix="/incidents", tags=["Evidence"])
 
@@ -18,6 +19,7 @@ def list_incident_evidence(
     type: Optional[str] = Query(default=None),
     trace_id: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.VIEWER.value, Role.INVESTIGATOR.value, Role.ADMIN.value])),
 ):
     incident = db.get(Incident, id)
     if not incident:
@@ -70,7 +72,11 @@ def list_incident_evidence(
 traces_router = APIRouter(prefix="/traces", tags=["Traces"])
 
 @traces_router.get("/{trace_id}")
-def get_trace_spans(trace_id: str, db: Session = Depends(get_db)):
+def get_trace_spans(
+    trace_id: str,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.VIEWER.value, Role.INVESTIGATOR.value, Role.ADMIN.value])),
+):
     """
     Retrieves all correlated spans for a distributed trace across services.
     Enables cross-service root-cause and latency inspection.

@@ -4,5 +4,5 @@ from backend.app.main import app
 
 @pytest.fixture
 def client():
-    with TestClient(app) as c:
+    with TestClient(app, headers={"X-API-Key": "dev-admin-key"}) as c:
         yield c

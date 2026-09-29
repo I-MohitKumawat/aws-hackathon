@@ -24,6 +24,26 @@ class Settings(BaseSettings):
     DETECTION_DEDUPLICATION_WINDOW_SECONDS: int = 300
     AUTO_INVESTIGATE_ON_DETECTION: bool = False
 
+    # Step 8: Security & Role-Based Access Control
+    AUTH_ENABLED: bool = True
+    API_KEYS: dict[str, str] = {
+        "dev-admin-key": "admin",
+        "dev-investigator-key": "investigator",
+        "dev-viewer-key": "viewer",
+        "dev-collector-key": "telemetry_collector",
+    }
+
+    # Step 8: Resource Limits & Rate Bounding
+    MAX_REQUEST_BODY_BYTES: int = 10_000_000  # 10MB
+    MAX_TELEMETRY_BATCH_SIZE: int = 1000      # Max items per ingestion payload
+    MAX_CONCURRENT_INVESTIGATIONS: int = 2   # Max parallel Ollama inference tasks
+    INVESTIGATION_TIMEOUT_SECONDS: float = 300.0
+    MAX_INVESTIGATION_RETRIES: int = 2
+
+    # Step 8: Telemetry & Investigation Data Retention
+    RETENTION_TELEMETRY_HOURS: int = 168     # 7 days
+    RETENTION_INVESTIGATION_DAYS: int = 30   # 30 days
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

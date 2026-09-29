@@ -59,7 +59,7 @@ def run_verification():
     log("2. Starting Step 7 Automatic Detection & Correlation Verification")
     log("=" * 75)
 
-    client = requests.Client(timeout=30.0)
+    client = requests.Client(timeout=30.0, headers={"X-API-Key": "dev-admin-key"})
 
     # Resolve any lingering open/investigating auto-detected incidents to start clean
     active_res = client.get(f"{BACKEND_URL}/incidents?source=auto_detected&limit=50")

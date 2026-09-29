@@ -18,7 +18,10 @@ class InvestigationJob(Base):
     time_window_start = Column(DateTime(timezone=True), nullable=True)
     time_window_end = Column(DateTime(timezone=True), nullable=True)
     error = Column(Text, nullable=True)
+    retry_count = Column(Integer, default=0, nullable=False)
+    max_retries = Column(Integer, default=2, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
     incident = relationship("Incident", back_populates="investigation_jobs")

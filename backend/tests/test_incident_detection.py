@@ -39,7 +39,7 @@ def setup_db():
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    return TestClient(app, headers={"X-API-Key": "dev-admin-key"})
 
 @pytest.fixture
 def db_session():

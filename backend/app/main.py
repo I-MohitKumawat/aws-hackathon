@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
+import logging
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .config import settings
-from .database import engine, Base
+from .database import engine, Base, SessionLocal
 from .core.exceptions import AppException
 from .api.health import router as health_router
 from .api.incidents import router as incidents_router
@@ -16,10 +17,14 @@ from .api.investigations import (
     investigations_router,
 )
 from .api.otlp import router as otlp_router
+from .api.admin import router as admin_router
+from .services.investigation_service import recover_orphaned_jobs
+
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Enable pgvector extension if on PostgreSQL
+    # 1. Enable pgvector extension if on PostgreSQL
     try:
         if engine.dialect.name == "postgresql":
             from sqlalchemy import text
@@ -29,13 +34,12 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-    # Ensure evidence.incident_id is nullable if existing table had NOT NULL constraint
+    # 2. Ensure evidence.incident_id is nullable if existing table had NOT NULL constraint
     try:
         if engine.dialect.name == "sqlite":
             with engine.connect() as conn:
                 table_info = conn.exec_driver_sql("PRAGMA table_info(evidence)").fetchall()
                 for col in table_info:
-                    # col format: (cid, name, type, notnull, dflt_value, pk)
                     if col[1] == "incident_id" and col[3] == 1:
                         conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
                         conn.exec_driver_sql("ALTER TABLE evidence RENAME TO _evidence_old")
@@ -53,7 +57,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-    # Ensure incidents table has source, detection_rule, and detection_reason columns
+    # 3. Ensure incidents table has source, detection_rule, and detection_reason columns
     try:
         if engine.dialect.name == "postgresql":
             from sqlalchemy import text
@@ -76,8 +80,41 @@ async def lifespan(app: FastAPI):
     except Exception:
         pass
 
-    # Initialize database tables
+    # 4. Ensure investigation_jobs table has retry_count, max_retries, and updated_at columns
+    try:
+        if engine.dialect.name == "postgresql":
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE investigation_jobs ADD COLUMN IF NOT EXISTS retry_count INTEGER DEFAULT 0 NOT NULL"))
+                conn.execute(text("ALTER TABLE investigation_jobs ADD COLUMN IF NOT EXISTS max_retries INTEGER DEFAULT 2 NOT NULL"))
+                conn.execute(text("ALTER TABLE investigation_jobs ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()"))
+                conn.commit()
+        elif engine.dialect.name == "sqlite":
+            with engine.connect() as conn:
+                table_info = conn.exec_driver_sql("PRAGMA table_info(investigation_jobs)").fetchall()
+                col_names = {col[1] for col in table_info}
+                if table_info and "retry_count" not in col_names:
+                    conn.exec_driver_sql("ALTER TABLE investigation_jobs ADD COLUMN retry_count INTEGER DEFAULT 0 NOT NULL")
+                if table_info and "max_retries" not in col_names:
+                    conn.exec_driver_sql("ALTER TABLE investigation_jobs ADD COLUMN max_retries INTEGER DEFAULT 2 NOT NULL")
+                if table_info and "updated_at" not in col_names:
+                    conn.exec_driver_sql("ALTER TABLE investigation_jobs ADD COLUMN updated_at TIMESTAMP")
+                conn.commit()
+    except Exception:
+        pass
+
+    # 5. Initialize database tables
     Base.metadata.create_all(bind=engine)
+
+    # 6. Step 8: Safe startup recovery of orphaned investigation jobs
+    try:
+        with SessionLocal() as db:
+            rec_stats = recover_orphaned_jobs(db)
+            if rec_stats.get("total_orphaned", 0) > 0:
+                logger.warning("Startup investigation recovery completed: %s", rec_stats)
+    except Exception as exc:
+        logger.error("Failed during startup job recovery: %s", exc)
+
     yield
 
 app = FastAPI(
@@ -88,14 +125,35 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS Middleware
+# CORS Middleware with restricted allowed methods
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
+
+# Request Size Limit Middleware (protects backend against oversized ingestion payloads)
+@app.middleware("http")
+async def limit_request_size(request: Request, call_next):
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            if int(content_length) > settings.MAX_REQUEST_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={
+                        "error": {
+                            "code": "PAYLOAD_TOO_LARGE",
+                            "message": f"Request body size exceeds maximum limit of {settings.MAX_REQUEST_BODY_BYTES} bytes.",
+                            "details": {"max_limit_bytes": settings.MAX_REQUEST_BODY_BYTES},
+                        }
+                    },
+                )
+        except ValueError:
+            pass
+    return await call_next(request)
 
 # Gzip Request Decompression Middleware (handles compressed OTLP telemetry)
 @app.middleware("http")
@@ -141,12 +199,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.exception_handler(Exception)
 async def generic_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled backend error occurred: %s", exc)
     return JSONResponse(
         status_code=500,
         content={
             "error": {
                 "code": "INTERNAL_SERVER_ERROR",
-                "message": f"An unexpected backend error occurred: {str(exc)}",
+                "message": "An unexpected backend error occurred. Sensitive system details have been redacted.",
                 "details": {},
             }
         },
@@ -160,5 +219,6 @@ app.include_router(evidence_router, prefix="/api/v1")
 app.include_router(traces_router, prefix="/api/v1")
 app.include_router(incident_investigations_router, prefix="/api/v1")
 app.include_router(investigations_router, prefix="/api/v1")
+app.include_router(admin_router, prefix="/api/v1")
 app.include_router(otlp_router, prefix="/api/v1")
 app.include_router(otlp_router)
