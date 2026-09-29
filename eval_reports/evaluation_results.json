@@ -1,0 +1,575 @@
+{
+  "metadata": {
+    "timestamp": "2026-09-29T18:48:38.927141+00:00",
+    "model_name": "qwen3:4b",
+    "base_url": "http://localhost:11435",
+    "prompt_version": "1.0.0",
+    "dataset_version": "1.0.0",
+    "total_scenarios": 9,
+    "duration_seconds": 616.24
+  },
+  "aggregate_metrics": {
+    "total_scenarios": 9,
+    "evaluated_scenarios": 9,
+    "average_diagnosis_accuracy": 0.7778,
+    "root_cause_identification_rate": 0.7778,
+    "average_citation_validity": 1.0,
+    "average_evidence_recall": 1.0,
+    "average_evidence_precision": 1.0,
+    "average_unsupported_claim_rate": 0.0,
+    "average_uncertainty_score": 1.0,
+    "average_actionability_score": 0.5467,
+    "overall_benchmark_score": 0.8542,
+    "scenarios_requiring_human_review": 3
+  },
+  "scenario_results": [
+    {
+      "scenario_id": "scen_db_pool_exhaustion",
+      "scenario_name": "PostgreSQL Connection Pool Exhaustion",
+      "category": "root_cause_known",
+      "diagnosis_status": "identified",
+      "diagnosis_accuracy_score": 1.0,
+      "identified_root_cause_vs_symptom": true,
+      "diagnosis_explanation": "Identified primary root cause mechanism: ['connection pool', 'pool exhaustion', 'connections'].",
+      "total_citations": 3,
+      "valid_citations_count": 3,
+      "invalid_citations_count": 0,
+      "citation_validity_rate": 1.0,
+      "essential_evidence_cited": [
+        "ev_db_log_01",
+        "ev_db_met_01",
+        "ev_db_span_01"
+      ],
+      "essential_evidence_missing": [],
+      "essential_evidence_recall": 1.0,
+      "irrelevant_evidence_cited": [],
+      "evidence_precision": 1.0,
+      "grounding_score": 1.0,
+      "unsupported_claims_count": 0,
+      "unsupported_claim_rate": 0.0,
+      "uncertainty_score": 1.0,
+      "hallucination_detected": false,
+      "uncertainty_explanation": "Correct high-confidence grounded hypothesis.",
+      "matched_action_keywords": [
+        "pool",
+        "connection"
+      ],
+      "action_alignment_score": 0.6667,
+      "action_specificity_score": 0.7,
+      "actionability_score": 0.68,
+      "composite_score": 0.952,
+      "human_review_required": false,
+      "qualitative_notes": "Correct high-confidence grounded hypothesis."
+    },
+    {
+      "scenario_id": "scen_payment_gateway_decline",
+      "scenario_name": "Downstream Payment Gateway Decline",
+      "category": "root_cause_known",
+      "diagnosis_status": "identified",
+      "diagnosis_accuracy_score": 1.0,
+      "identified_root_cause_vs_symptom": true,
+      "diagnosis_explanation": "Identified primary root cause mechanism: ['payment gateway', 'card_issuer_declined', 'declined', 'payment service', 'fraud check'].",
+      "total_citations": 3,
+      "valid_citations_count": 3,
+      "invalid_citations_count": 0,
+      "citation_validity_rate": 1.0,
+      "essential_evidence_cited": [
+        "ev_pay_log_01",
+        "ev_pay_span_chk",
+        "ev_pay_span_svc"
+      ],
+      "essential_evidence_missing": [],
+      "essential_evidence_recall": 1.0,
+      "irrelevant_evidence_cited": [],
+      "evidence_precision": 1.0,
+      "grounding_score": 1.0,
+      "unsupported_claims_count": 0,
+      "unsupported_claim_rate": 0.0,
+      "uncertainty_score": 1.0,
+      "hallucination_detected": false,
+      "uncertainty_explanation": "Correct high-confidence grounded hypothesis.",
+      "matched_action_keywords": [
+        "decline",
+        "fraud"
+      ],
+      "action_alignment_score": 0.6667,
+      "action_specificity_score": 0.3,
+      "actionability_score": 0.52,
+      "composite_score": 0.928,
+      "human_review_required": false,
+      "qualitative_notes": "Correct high-confidence grounded hypothesis."
+    },
+    {
+      "scenario_id": "scen_inventory_out_of_stock",
+      "scenario_name": "Inventory Allocation Out of Stock",
+      "category": "root_cause_known",
+      "diagnosis_status": "identified",
+      "diagnosis_accuracy_score": 1.0,
+      "identified_root_cause_vs_symptom": true,
+      "diagnosis_explanation": "Identified primary root cause mechanism: ['out of stock', 'sku_laptop_stand', 'warehouse-east', 'inventory'].",
+      "total_citations": 3,
+      "valid_citations_count": 3,
+      "invalid_citations_count": 0,
+      "citation_validity_rate": 1.0,
+      "essential_evidence_cited": [
+        "ev_inv_chk_log",
+        "ev_inv_log_01",
+        "ev_inv_span_01"
+      ],
+      "essential_evidence_missing": [],
+      "essential_evidence_recall": 1.0,
+      "irrelevant_evidence_cited": [],
+      "evidence_precision": 1.0,
+      "grounding_score": 1.0,
+      "unsupported_claims_count": 0,
+      "unsupported_claim_rate": 0.0,
+      "uncertainty_score": 1.0,
+      "hallucination_detected": false,
+      "uncertainty_explanation": "Correct high-confidence grounded hypothesis.",
+      "matched_action_keywords": [
+        "warehouse",
+        "stock",
+        "sku"
+      ],
+      "action_alignment_score": 1.0,
+      "action_specificity_score": 1.0,
+      "actionability_score": 1.0,
+      "composite_score": 1.0,
+      "human_review_required": false,
+      "qualitative_notes": "Correct high-confidence grounded hypothesis."
+    },
+    {
+      "scenario_id": "scen_elevated_error_rate",
+      "scenario_name": "Post-Deployment NullPointerException Spike",
+      "category": "root_cause_known",
+      "diagnosis_status": "identified",
+      "diagnosis_accuracy_score": 1.0,
+      "identified_root_cause_vs_symptom": true,
+      "diagnosis_explanation": "Identified primary root cause mechanism: ['v2.2.0', 'deployment', 'nullpointerexception', 'cartitemsserializer', 'discounts'].",
+      "total_citations": 3,
+      "valid_citations_count": 3,
+      "invalid_citations_count": 0,
+      "citation_validity_rate": 1.0,
+      "essential_evidence_cited": [
+        "ev_dep_event_01",
+        "ev_rate_met_01",
+        "ev_ser_log_01"
+      ],
+      "essential_evidence_missing": [],
+      "essential_evidence_recall": 1.0,
+      "irrelevant_evidence_cited": [],
+      "evidence_precision": 1.0,
+      "grounding_score": 1.0,
+      "unsupported_claims_count": 0,
+      "unsupported_claim_rate": 0.0,
+      "uncertainty_score": 1.0,
+      "hallucination_detected": false,
+      "uncertainty_explanation": "Correct high-confidence grounded hypothesis.",
+      "matched_action_keywords": [
+        "null"
+      ],
+      "action_alignment_score": 0.3333,
+      "action_specificity_score": 0.7,
+      "actionability_score": 0.48,
+      "composite_score": 0.922,
+      "human_review_required": false,
+      "qualitative_notes": "Correct high-confidence grounded hypothesis."
+    },
+    {
+      "scenario_id": "scen_sustained_latency_spike",
+      "scenario_name": "Unindexed Sequential Scan Latency Spike",
+      "category": "root_cause_known",
+      "diagnosis_status": "identified",
+      "diagnosis_accuracy_score": 1.0,
+      "identified_root_cause_vs_symptom": true,
+      "diagnosis_explanation": "Identified primary root cause mechanism: ['seq scan', 'inventory_items', 'slow query'].",
+      "total_citations": 3,
+      "valid_citations_count": 3,
+      "invalid_citations_count": 0,
+      "citation_validity_rate": 1.0,
+      "essential_evidence_cited": [
+        "ev_lat_log_01",
+        "ev_lat_met_01",
+        "ev_lat_span_01"
+      ],
+      "essential_evidence_missing": [],
+      "essential_evidence_recall": 1.0,
+      "irrelevant_evidence_cited": [],
+      "evidence_precision": 1.0,
+      "grounding_score": 1.0,
+      "unsupported_claims_count": 0,
+      "unsupported_claim_rate": 0.0,
+      "uncertainty_score": 1.0,
+      "hallucination_detected": false,
+      "uncertainty_explanation": "Correct high-confidence grounded hypothesis.",
+      "matched_action_keywords": [
+        "inventory_items"
+      ],
+      "action_alignment_score": 0.3333,
+      "action_specificity_score": 1.0,
+      "actionability_score": 0.6,
+      "composite_score": 0.94,
+      "human_review_required": false,
+      "qualitative_notes": "Correct high-confidence grounded hypothesis."
+    },
+    {
+      "scenario_id": "scen_incomplete_evidence",
+      "scenario_name": "Dropped Downstream Telemetry (Incomplete Evidence)",
+      "category": "incomplete_evidence",
+      "diagnosis_status": "identified",
+      "diagnosis_accuracy_score": 1.0,
+      "identified_root_cause_vs_symptom": true,
+      "diagnosis_explanation": "Correctly concluded root cause is unidentifiable from available telemetry.",
+      "total_citations": 2,
+      "valid_citations_count": 2,
+      "invalid_citations_count": 0,
+      "citation_validity_rate": 1.0,
+      "essential_evidence_cited": [
+        "ev_inc_log_01",
+        "ev_inc_span_01"
+      ],
+      "essential_evidence_missing": [],
+      "essential_evidence_recall": 1.0,
+      "irrelevant_evidence_cited": [],
+      "evidence_precision": 1.0,
+      "grounding_score": 1.0,
+      "unsupported_claims_count": 0,
+      "unsupported_claim_rate": 0.0,
+      "uncertainty_score": 1.0,
+      "hallucination_detected": false,
+      "uncertainty_explanation": "Correctly handled uncertainty on unidentifiable scenario.",
+      "matched_action_keywords": [
+        "downstream",
+        "payment",
+        "logs"
+      ],
+      "action_alignment_score": 1.0,
+      "action_specificity_score": 0.3,
+      "actionability_score": 0.72,
+      "composite_score": 0.958,
+      "human_review_required": false,
+      "qualitative_notes": "Correctly handled uncertainty on unidentifiable scenario."
+    },
+    {
+      "scenario_id": "scen_ambiguous_evidence",
+      "scenario_name": "Concurrent Database CPU Spike & Third-Party API Timeout",
+      "category": "ambiguous_evidence",
+      "diagnosis_status": "missed",
+      "diagnosis_accuracy_score": 0.0,
+      "identified_root_cause_vs_symptom": false,
+      "diagnosis_explanation": "Failed to recognize that telemetry was insufficient; claimed false certainty.",
+      "total_citations": 3,
+      "valid_citations_count": 3,
+      "invalid_citations_count": 0,
+      "citation_validity_rate": 1.0,
+      "essential_evidence_cited": [
+        "ev_amb_api_log",
+        "ev_amb_chk_span",
+        "ev_amb_db_cpu"
+      ],
+      "essential_evidence_missing": [],
+      "essential_evidence_recall": 1.0,
+      "irrelevant_evidence_cited": [],
+      "evidence_precision": 1.0,
+      "grounding_score": 1.0,
+      "unsupported_claims_count": 0,
+      "unsupported_claim_rate": 0.0,
+      "uncertainty_score": 1.0,
+      "hallucination_detected": false,
+      "uncertainty_explanation": "Correctly handled uncertainty on unidentifiable scenario.",
+      "matched_action_keywords": [
+        "cpu"
+      ],
+      "action_alignment_score": 0.3333,
+      "action_specificity_score": 0.3,
+      "actionability_score": 0.32,
+      "composite_score": 0.548,
+      "human_review_required": true,
+      "qualitative_notes": "Correctly handled uncertainty on unidentifiable scenario."
+    },
+    {
+      "scenario_id": "scen_contradictory_evidence",
+      "scenario_name": "Contradicted Deadlock Theory vs API Gateway Rate Limiting",
+      "category": "contradictory_evidence",
+      "diagnosis_status": "identified",
+      "diagnosis_accuracy_score": 1.0,
+      "identified_root_cause_vs_symptom": true,
+      "diagnosis_explanation": "Identified primary root cause mechanism: ['rate limit', '429', 'gateway'].",
+      "total_citations": 5,
+      "valid_citations_count": 5,
+      "invalid_citations_count": 0,
+      "citation_validity_rate": 1.0,
+      "essential_evidence_cited": [
+        "ev_contra_gw_log",
+        "ev_contra_gw_span"
+      ],
+      "essential_evidence_missing": [],
+      "essential_evidence_recall": 1.0,
+      "irrelevant_evidence_cited": [],
+      "evidence_precision": 1.0,
+      "grounding_score": 1.0,
+      "unsupported_claims_count": 0,
+      "unsupported_claim_rate": 0.0,
+      "uncertainty_score": 1.0,
+      "hallucination_detected": false,
+      "uncertainty_explanation": "Contradicted lead properly identified or discarded in favor of gateway rate limit.",
+      "matched_action_keywords": [
+        "gateway"
+      ],
+      "action_alignment_score": 0.3333,
+      "action_specificity_score": 0.3,
+      "actionability_score": 0.32,
+      "composite_score": 0.898,
+      "human_review_required": true,
+      "qualitative_notes": "Contradicted lead properly identified or discarded in favor of gateway rate limit."
+    },
+    {
+      "scenario_id": "scen_insufficient_telemetry",
+      "scenario_name": "Abrupt Process Crash (Insufficient Telemetry)",
+      "category": "insufficient_telemetry",
+      "diagnosis_status": "missed",
+      "diagnosis_accuracy_score": 0.0,
+      "identified_root_cause_vs_symptom": false,
+      "diagnosis_explanation": "Failed to recognize that telemetry was insufficient; claimed false certainty.",
+      "total_citations": 2,
+      "valid_citations_count": 2,
+      "invalid_citations_count": 0,
+      "citation_validity_rate": 1.0,
+      "essential_evidence_cited": [
+        "ev_insuf_log_01",
+        "ev_insuf_span_01"
+      ],
+      "essential_evidence_missing": [],
+      "essential_evidence_recall": 1.0,
+      "irrelevant_evidence_cited": [],
+      "evidence_precision": 1.0,
+      "grounding_score": 1.0,
+      "unsupported_claims_count": 0,
+      "unsupported_claim_rate": 0.0,
+      "uncertainty_score": 1.0,
+      "hallucination_detected": false,
+      "uncertainty_explanation": "Correctly handled uncertainty on unidentifiable scenario.",
+      "matched_action_keywords": [],
+      "action_alignment_score": 0.0,
+      "action_specificity_score": 0.7,
+      "actionability_score": 0.28,
+      "composite_score": 0.542,
+      "human_review_required": true,
+      "qualitative_notes": "Correctly handled uncertainty on unidentifiable scenario."
+    }
+  ],
+  "raw_outputs": {
+    "scen_db_pool_exhaustion": {
+      "summary": "Checkout service HTTP 500 errors due to database connection pool exhaustion, with active connections reaching maximum capacity (20/20) and span failures indicating acquisition timeouts.",
+      "hypotheses": [
+        {
+          "id": "hyp_db_pool_exhausted",
+          "description": "Database connection pool reached maximum capacity (20 connections) with no available connections to acquire, causing span timeouts and HTTP 500 errors.",
+          "status": "supported",
+          "supporting_evidence": [
+            "ev_db_span_01",
+            "ev_db_log_01",
+            "ev_db_met_01"
+          ],
+          "contradicting_evidence": [],
+          "missing_evidence": [
+            "Historical connection pool usage metrics showing trend before the incident to confirm sustained exhaustion",
+            "Database server load metrics to rule out backend resource constraints"
+          ],
+          "next_step": "Check database server CPU/memory usage and connection pool metrics from the database service to verify if the pool exhaustion was caused by backend resource constraints."
+        }
+      ]
+    },
+    "scen_payment_gateway_decline": {
+      "summary": "Checkout transactions failing with 502 Bad Gateway at payment step due to payment service rejecting transactions with decline code 'card_issuer_declined'.",
+      "hypotheses": [
+        {
+          "id": "hyp_1",
+          "description": "Payment gateway (Stripe) declined transactions due to insufficient funds or fraud check failure, causing the payment service to return 502 Bad Gateway to the checkout service.",
+          "status": "supported",
+          "supporting_evidence": [
+            "ev_pay_span_chk",
+            "ev_pay_span_svc",
+            "ev_pay_log_01"
+          ],
+          "contradicting_evidence": [],
+          "missing_evidence": [
+            "Payment gateway decline details for order ord_pay_991 (e.g., specific decline reason from Stripe API)"
+          ],
+          "next_step": "Check Stripe API response for order ord_pay_991 to determine exact decline reason (e.g., insufficient funds, fraud check)"
+        }
+      ]
+    },
+    "scen_inventory_out_of_stock": {
+      "summary": "Checkout service failed to reserve inventory for order ord_inv_772 due to inventory service reporting item 'sku_laptop_stand' as out of stock in warehouse-east (2 items requested). This caused a 409 Conflict error in checkout.",
+      "hypotheses": [
+        {
+          "id": "hyp_1",
+          "description": "Inventory service incorrectly reported item 'sku_laptop_stand' as out of stock in warehouse-east when 2 items were requested, causing checkout to fail with 409 Conflict.",
+          "status": "supported",
+          "supporting_evidence": [
+            "ev_inv_span_01",
+            "ev_inv_log_01",
+            "ev_inv_chk_log"
+          ],
+          "contradicting_evidence": [],
+          "missing_evidence": [
+            "Inventory stock levels for 'sku_laptop_stand' in warehouse-east at the time of reservation request (to confirm actual stock availability)"
+          ],
+          "next_step": "Check inventory stock levels for 'sku_laptop_stand' in warehouse-east using the inventory service's stock API at the exact timestamp of the reservation request (2026-09-30T09:20:03+00:00)"
+        }
+      ]
+    },
+    "scen_elevated_error_rate": {
+      "summary": "Checkout service deployed v2.2.0 at 09:28:00, followed by a 5xx error rate spike to 18.5% at 09:30:30. A NullPointerException in CartItemsSerializer was logged at 09:30:05.",
+      "hypotheses": [
+        {
+          "id": "hyp_1",
+          "description": "The v2.2.0 deployment introduced a null pointer exception in the CartItemsSerializer when processing orders, causing HTTP 5xx errors due to unhandled null values in the order.discounts field.",
+          "status": "supported",
+          "supporting_evidence": [
+            "ev_dep_event_01",
+            "ev_ser_log_01",
+            "ev_rate_met_01"
+          ],
+          "contradicting_evidence": [],
+          "missing_evidence": [
+            "Trace data showing the full call stack for the NullPointerException to confirm the exact failure path",
+            "Metrics for the 'order.discounts' field null rate before and after deployment to establish baseline"
+          ],
+          "next_step": "Check the full trace for the NullPointerException (trace_id: tr_eval_err_01) to identify the exact failure path and validate the null value propagation in the order.discounts field."
+        }
+      ]
+    },
+    "scen_sustained_latency_spike": {
+      "summary": "Inventory service experienced a sustained latency spike with 99th percentile request duration exceeding 4500ms, triggered by a single slow PostgreSQL query (4490ms) causing span failures (4520ms) and metric p99 spike (4550ms).",
+      "hypotheses": [
+        {
+          "id": "hyp_1",
+          "description": "A single slow PostgreSQL query (Seq Scan on inventory_items) caused the inventory service latency spike, leading to span failures and metric p99 exceedance.",
+          "status": "supported",
+          "supporting_evidence": [
+            "ev_lat_span_01",
+            "ev_lat_log_01",
+            "ev_lat_met_01"
+          ],
+          "contradicting_evidence": [],
+          "missing_evidence": [
+            "Confirmation that the slow query is not a result of a specific user or transaction pattern (e.g., query patterns by user ID or session)",
+            "Analysis of database connection pool metrics to rule out connection exhaustion"
+          ],
+          "next_step": "Check PostgreSQL query cache hit rates and connection pool utilization for the inventory_items table during the latency spike period."
+        }
+      ]
+    },
+    "scen_incomplete_evidence": {
+      "summary": "Checkout service failed to complete order processing due to downstream RPC orchestration error, with no downstream telemetry (logs or traces) captured for the failed request (order ord_inc_123).",
+      "hypotheses": [
+        {
+          "id": "hyp_1",
+          "description": "Downstream service (e.g., payment processor) is unreachable or misconfigured, causing the checkout service to fail with a remote error and no downstream telemetry captured due to the failure occurring before telemetry collection.",
+          "status": "possible",
+          "supporting_evidence": [
+            "ev_inc_span_01",
+            "ev_inc_log_01"
+          ],
+          "contradicting_evidence": [],
+          "missing_evidence": [
+            "Downstream service logs for order ord_inc_123 to confirm if the payment processor failed or returned an error",
+            "Downstream service traces for the failed payment request to verify the error origin"
+          ],
+          "next_step": "Check downstream service (payment processor) logs for order ord_inc_123 to identify if the payment service failed or returned an error response."
+        }
+      ]
+    },
+    "scen_ambiguous_evidence": {
+      "summary": "Checkout transactions failed with 504 Gateway Timeouts during a period when database host CPU spiked to 95.2% and external currency API calls timed out.",
+      "hypotheses": [
+        {
+          "id": "hyp_1",
+          "description": "Database host CPU spike caused checkout transactions to time out when making external currency API calls due to increased load on the database host.",
+          "status": "possible",
+          "supporting_evidence": [
+            "ev_amb_db_cpu",
+            "ev_amb_api_log",
+            "ev_amb_chk_span"
+          ],
+          "contradicting_evidence": [],
+          "missing_evidence": [
+            "Database host CPU utilization metrics for the period before the spike to establish baseline",
+            "Checkout service logs showing database connection errors or timeouts",
+            "Network latency metrics between checkout service and database host"
+          ],
+          "next_step": "Check database host CPU utilization trends for the 5 minutes prior to the spike to identify if the spike was transient or part of a sustained pattern."
+        }
+      ]
+    },
+    "scen_contradictory_evidence": {
+      "summary": "Checkout service experienced a 503 outage during flash sale, with engineering alert indicating suspected database deadlocks. However, telemetry shows no database deadlocks (metric count 0) and active database connections at healthy 4/100. API Gateway rate limits (429 errors) are the primary symptom, with traces confirming 429 throttling from gateway.",
+      "hypotheses": [
+        {
+          "id": "hypo_1",
+          "description": "API Gateway rate limiting (429 errors) caused the 503 outage, as observed by 429 errors from gateway and confirmed by trace spans showing HTTP 429 throttling.",
+          "status": "supported",
+          "supporting_evidence": [
+            "ev_contra_gw_log",
+            "ev_contra_gw_span"
+          ],
+          "contradicting_evidence": [],
+          "missing_evidence": [
+            "Confirmation that rate limiting is the sole cause of 503 errors (e.g., gateway error logs for all 503s, not just 429s)"
+          ],
+          "next_step": "Check gateway error logs for all 503 responses to confirm 429 is the only cause of the outage"
+        },
+        {
+          "id": "hypo_2",
+          "description": "Database deadlocks were misreported by engineering, as observed by metric showing 0 deadlocks and healthy connection pool.",
+          "status": "inconclusive",
+          "supporting_evidence": [
+            "ev_contra_met_deadlocks",
+            "ev_contra_met_active_conn"
+          ],
+          "contradicting_evidence": [
+            "ev_contra_note_01"
+          ],
+          "missing_evidence": [
+            "Actual database deadlock logs or traces from the checkout service to confirm if deadlocks occurred"
+          ],
+          "next_step": "Review database deadlock logs from checkout service to verify if deadlocks were present"
+        }
+      ]
+    },
+    "scen_insufficient_telemetry": {
+      "summary": "Payment service abruptly terminated during active traffic, causing checkout service to receive connection reset errors from payment-service:8082. Observed symptoms include checkout service logs and traces indicating failed 'call_payment_service' spans with ConnectionResetError(104).",
+      "hypotheses": [
+        {
+          "id": "hyp_1",
+          "description": "Payment service terminated unexpectedly due to resource exhaustion (e.g., memory or connection pool depletion) causing abrupt connection resets from checkout service.",
+          "status": "possible",
+          "supporting_evidence": [
+            "ev_insuf_log_01",
+            "ev_insuf_span_01"
+          ],
+          "contradicting_evidence": [],
+          "missing_evidence": [
+            "Payment service metrics showing memory usage or connection pool metrics during the incident timeframe",
+            "Checkout service logs indicating failed connection attempts to payment service before the reset",
+            "Payment service traces showing internal errors or timeouts"
+          ],
+          "next_step": "Check payment service memory usage and connection pool metrics from the incident timeframe (2026-09-30T10:20:00+00:00) using Prometheus or CloudWatch"
+        }
+      ]
+    }
+  },
+  "execution_durations": {
+    "scen_db_pool_exhaustion": 80.75,
+    "scen_payment_gateway_decline": 62.32,
+    "scen_inventory_out_of_stock": 66.42,
+    "scen_elevated_error_rate": 67.9,
+    "scen_sustained_latency_spike": 65.73,
+    "scen_incomplete_evidence": 55.21,
+    "scen_ambiguous_evidence": 58.07,
+    "scen_contradictory_evidence": 103.16,
+    "scen_insufficient_telemetry": 56.68
+  }
+}

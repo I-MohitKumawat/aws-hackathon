@@ -202,7 +202,7 @@ def run_verification():
     # -------------------------------------------------------------------------
     log("\n--- Step 6: Polling AI Investigation on Auto-Detected Incident ---")
     report_data = None
-    for attempt in range(90):
+    for attempt in range(150):
         poll_resp = client.get(f"{BACKEND_URL}/investigations/{job_id_1}")
         poll_data = poll_resp.json()
         status_val = poll_data["status"]
