@@ -18,6 +18,15 @@ from .api.investigations import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Enable pgvector extension if on PostgreSQL
+    try:
+        if engine.dialect.name == "postgresql":
+            from sqlalchemy import text
+            with engine.connect() as conn:
+                conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
+                conn.commit()
+    except Exception:
+        pass
     # Initialize database tables
     Base.metadata.create_all(bind=engine)
     yield

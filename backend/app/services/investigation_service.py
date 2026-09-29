@@ -6,11 +6,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from ..database import SessionLocal
+from ..config import settings
 from ..models import Incident, Evidence, InvestigationJob, InvestigationReport
 from ..schemas.report import Hypothesis
 from ..agent import (
     OllamaClient,
     OllamaClientError,
+    EmbeddingClient,
     SYSTEM_PROMPT,
     INVESTIGATION_REPORT_JSON_SCHEMA,
     build_investigation_prompt,
@@ -18,6 +20,7 @@ from ..agent import (
     RawAIInvestigationOutput,
     ReportValidationError,
 )
+from .retrieval_service import retrieve_evidence_for_investigation
 
 async def investigate_incident(
     incident: Incident,
@@ -64,11 +67,15 @@ async def investigate_incident(
     )
     return validated_output
 
-async def execute_investigation(job_id: str, client: Optional[OllamaClient] = None):
+async def execute_investigation(
+    job_id: str,
+    client: Optional[OllamaClient] = None,
+    embedding_client: Optional[EmbeddingClient] = None,
+):
     """
     Background worker orchestrating the investigation job lifecycle:
     1. Sets status = running, stage = retrieving_evidence, progress = 20
-    2. Queries incident and applies time-window filters to correlated evidence
+    2. Retrieves evidence using hybrid vector similarity and time-window filtering
     3. Sets stage = analyzing_evidence, progress = 50
     4. Calls investigate_incident (Ollama + Validator)
     5. Persists report and sets status = completed atomically
@@ -94,14 +101,14 @@ async def execute_investigation(job_id: str, client: Optional[OllamaClient] = No
             db.commit()
             return
 
-        # Query evidence applying time-window filters if specified
-        query = select(Evidence).where(Evidence.incident_id == job.incident_id)
-        if job.time_window_start is not None:
-            query = query.where(Evidence.timestamp >= job.time_window_start)
-        if job.time_window_end is not None:
-            query = query.where(Evidence.timestamp <= job.time_window_end)
-
-        evidence_items = db.scalars(query.order_by(Evidence.timestamp.asc())).all()
+        # Retrieve evidence applying time-window filters and semantic/heuristic ranking
+        evidence_items = await retrieve_evidence_for_investigation(
+            db=db,
+            incident=incident,
+            job=job,
+            top_k=settings.RETRIEVAL_TOP_K,
+            embedding_client=embedding_client,
+        )
 
         job.stage = "analyzing_evidence"
         job.progress = 50

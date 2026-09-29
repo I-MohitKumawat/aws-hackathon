@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 import uuid
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import relationship
+from pgvector.sqlalchemy import Vector
 from ..database import Base
 
 def generate_uuid():
@@ -20,6 +21,7 @@ class Evidence(Base):
     trace_id = Column(String(128), nullable=True, index=True)
     source = Column(String(50), default="otel", nullable=False)
     metadata_json = Column(JSON, default=dict, nullable=False)
+    embedding = Column(Vector(384), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
     incident = relationship("Incident", back_populates="evidence_items")

@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "qwen3:4b"
     OLLAMA_TIMEOUT_SECONDS: float = 120.0
     EMBEDDING_MODEL: str = "bge-small-en-v1.5"
+    EMBEDDING_DIMENSION: int = 384
+    RETRIEVAL_TOP_K: int = 15
 
     model_config = SettingsConfigDict(
         env_file=".env",
