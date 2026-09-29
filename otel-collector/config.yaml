@@ -17,13 +17,19 @@ processors:
     timeout: 1s
 
 exporters:
-  otlp_http/backend:
+  otlphttp/backend:
     endpoint: http://backend:8000/api/v1/otlp
     encoding: json
+    compression: none
     retry_on_failure:
       enabled: true
       initial_interval: 1s
       max_interval: 10s
+
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
 
   debug:
     verbosity: detailed
@@ -38,7 +44,7 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, batch]
-      exporters: [otlp_http/backend, debug]
+      exporters: [otlphttp/backend, otlp/jaeger, debug]
   telemetry:
     logs:
       level: info

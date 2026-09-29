@@ -10,7 +10,7 @@ import os
 import sys
 import time
 import uuid
-import requests
+import httpx as requests
 from datetime import datetime, timezone
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000/api/v1")
@@ -93,19 +93,78 @@ def run_e2e_verification():
     except Exception as e:
         log(f"Checkout error request triggered expected error: {e}")
 
-    # 4. Allow Collector to Flush Batch
-    log("Step 4: Waiting for Collector batch flush (3 seconds)...")
-    time.sleep(3)
+    # 4. Allow Collector to Flush Batch and Backend to Ingest
+    log("Step 4: Waiting for Collector batch flush and backend ingestion...")
+    ev_data = {"items": [], "total": 0}
+    for _ in range(10):
+        time.sleep(1)
+        r = requests.get(f"{BACKEND_URL}/incidents/{incident_id}/evidence")
+        if r.status_code == 200:
+            ev_data = r.json()
+            if any(ev["severity"] == "error" for ev in ev_data.get("items", [])):
+                break
 
     # 5. Check Evidence via Direct/In-band association
     log("Step 5: Querying ingested evidence for incident...")
-    r = requests.get(f"{BACKEND_URL}/incidents/{incident_id}/evidence")
-    r.raise_for_status()
-    ev_data = r.json()
-    log(f"Retrieved {ev_data['total']} evidence items directly associated via X-Incident-Id.")
+    initial_total = ev_data["total"]
+    log(f"Retrieved {initial_total} evidence items directly associated via X-Incident-Id.")
+    assert initial_total > 0, "Expected at least 1 evidence item from checkout traces"
 
-    # 6. Test Explicit Post-Ingestion Association
-    log("Step 6: Testing explicit out-of-band association (associating any staged unlinked telemetry)...")
+    # Find the error evidence and healthy evidence
+    error_ev = next((ev for ev in ev_data["items"] if ev["severity"] == "error"), None)
+    assert error_ev is not None, "Expected at least one error trace span (ConnectionPoolTimeoutError)"
+    log(f"Verified error trace evidence: {error_ev['id']} ({error_ev['message']})")
+
+    # 6. Verify Duplicate Handling During Actual Retries
+    log("Step 6: Verifying duplicate handling during retries...")
+    sample_ev = ev_data["items"][0]
+    sample_span_id = sample_ev["metadata"].get("span_id", sample_ev["id"].replace("ev_span_", ""))
+    sample_trace_id = sample_ev.get("trace_id") or "1234567890abcdef1234567890abcdef"
+
+    # Send exact duplicate span to OTLP endpoint simulating collector/network retry
+    duplicate_payload = {
+        "resourceSpans": [
+            {
+                "resource": {
+                    "attributes": [
+                        {"key": "service.name", "value": {"stringValue": "checkout"}},
+                        {"key": "incident.id", "value": {"stringValue": incident_id}}
+                    ]
+                },
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "traceId": sample_trace_id,
+                                "spanId": sample_span_id,
+                                "name": "retry_duplicate_test",
+                                "kind": 1,
+                                "status": {"code": 1}
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+    dup_r = requests.post(f"{BACKEND_URL}/otlp/v1/traces", json=duplicate_payload)
+    log(f"Duplicate span ingestion response: {dup_r.status_code} {dup_r.json()}")
+    assert dup_r.status_code == 202, f"Expected 202 Accepted, got {dup_r.status_code}"
+
+    # Verify count did NOT increase
+    r = requests.get(f"{BACKEND_URL}/incidents/{incident_id}/evidence")
+    after_dup_total = r.json()["total"]
+    log(f"Evidence count before retry: {initial_total}, after duplicate retry: {after_dup_total}")
+    assert after_dup_total == initial_total, f"Duplicate span was improperly inserted! Expected {initial_total}, got {after_dup_total}"
+    log("Deduplication verified: 0 duplicate records created on retry.")
+
+    # 7. Test Explicit Post-Ingestion Association (Out-of-band telemetry)
+    log("Step 7: Testing unlinked telemetry ingestion and explicit out-of-band association...")
+    # Send a request to checkout without X-Incident-Id header
+    requests.post(f"{CHECKOUT_URL}/checkout", json={"items": ["staged_item"], "total": 19.99}, timeout=5)
+    log("Sent unlinked checkout request. Waiting for Collector batch flush (3 seconds)...")
+    time.sleep(3)
+
     assoc_r = requests.post(
         f"{BACKEND_URL}/incidents/{incident_id}/associate-telemetry",
         json={"service": "checkout"},
@@ -122,8 +181,8 @@ def run_e2e_verification():
     for ev in ev_items:
         log(f" - [{ev['severity'].upper()}] ID={ev['id']} Type={ev['type']} Message='{ev['message']}' TraceID={ev.get('trace_id')}")
 
-    # 7. Start AI Investigation
-    log("Step 7: Launching AI root-cause investigation job...")
+    # 8. Start AI Investigation
+    log("Step 8: Launching AI root-cause investigation job...")
     job_payload = {
         "time_window": {
             "start": "2026-09-01T00:00:00Z",
@@ -137,7 +196,7 @@ def run_e2e_verification():
     job_id = r.json()["job_id"]
     log(f"Investigation job created: {job_id}. Polling for completion...")
 
-    for _ in range(40):
+    for _ in range(120):
         r = requests.get(f"{BACKEND_URL}/investigations/{job_id}")
         r.raise_for_status()
         status_val = r.json()["status"]

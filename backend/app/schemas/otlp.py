@@ -1,20 +1,23 @@
 from typing import Any, Dict, List, Optional, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
-class KeyValue(BaseModel):
+class OtlpBaseModel(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+class KeyValue(OtlpBaseModel):
     key: str
     value: Union[Dict[str, Any], Any] = Field(default_factory=dict)
 
-class Event(BaseModel):
+class Event(OtlpBaseModel):
     timeUnixNano: Optional[Union[str, int]] = None
     name: str = ""
     attributes: Optional[List[KeyValue]] = Field(default_factory=list)
 
-class Status(BaseModel):
+class Status(OtlpBaseModel):
     code: Optional[Union[int, str]] = 0
     message: Optional[str] = ""
 
-class Span(BaseModel):
+class Span(OtlpBaseModel):
     traceId: str
     spanId: str
     parentSpanId: Optional[str] = None
@@ -26,22 +29,22 @@ class Span(BaseModel):
     events: Optional[List[Event]] = Field(default_factory=list)
     status: Optional[Status] = None
 
-class Scope(BaseModel):
+class Scope(OtlpBaseModel):
     name: Optional[str] = None
     version: Optional[str] = None
 
-class ScopeSpan(BaseModel):
+class ScopeSpan(OtlpBaseModel):
     scope: Optional[Scope] = None
     spans: List[Span] = Field(default_factory=list)
 
-class Resource(BaseModel):
+class Resource(OtlpBaseModel):
     attributes: Optional[List[KeyValue]] = Field(default_factory=list)
 
-class ResourceSpan(BaseModel):
+class ResourceSpan(OtlpBaseModel):
     resource: Optional[Resource] = None
     scopeSpans: List[ScopeSpan] = Field(default_factory=list)
 
-class OtlpTracesPayload(BaseModel):
+class OtlpTracesPayload(OtlpBaseModel):
     resourceSpans: List[ResourceSpan] = Field(default_factory=list)
 
 class OtlpIngestResponse(BaseModel):

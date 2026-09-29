@@ -10,7 +10,7 @@ from .core.exceptions import AppException
 from .api.health import router as health_router
 from .api.incidents import router as incidents_router
 from .api.telemetry import router as telemetry_router
-from .api.evidence import router as evidence_router
+from .api.evidence import router as evidence_router, traces_router
 from .api.investigations import (
     incident_investigations_router,
     investigations_router,
@@ -74,6 +74,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Gzip Request Decompression Middleware (handles compressed OTLP telemetry)
+@app.middleware("http")
+async def decompress_gzip_requests(request: Request, call_next):
+    if request.headers.get("content-encoding") == "gzip":
+        body = await request.body()
+        try:
+            import gzip
+            decompressed_body = gzip.decompress(body)
+            async def receive():
+                return {"type": "http.request", "body": decompressed_body, "more_body": False}
+            request = Request(request.scope, receive=receive)
+        except Exception:
+            pass
+    return await call_next(request)
+
 # Standard Error Exception Handlers
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
@@ -119,6 +134,7 @@ app.include_router(health_router, prefix="/api/v1")
 app.include_router(incidents_router, prefix="/api/v1")
 app.include_router(telemetry_router, prefix="/api/v1")
 app.include_router(evidence_router, prefix="/api/v1")
+app.include_router(traces_router, prefix="/api/v1")
 app.include_router(incident_investigations_router, prefix="/api/v1")
 app.include_router(investigations_router, prefix="/api/v1")
 app.include_router(otlp_router, prefix="/api/v1")

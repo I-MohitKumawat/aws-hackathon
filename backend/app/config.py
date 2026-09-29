@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     LLM_MODEL: str = "qwen3:4b"
-    OLLAMA_TIMEOUT_SECONDS: float = 120.0
+    OLLAMA_TIMEOUT_SECONDS: float = 300.0
     EMBEDDING_MODEL: str = "all-minilm"
     EMBEDDING_DIMENSION: int = 384
     RETRIEVAL_TOP_K: int = 15

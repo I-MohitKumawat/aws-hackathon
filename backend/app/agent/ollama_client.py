@@ -44,6 +44,7 @@ class OllamaClient:
         system: Optional[str] = None,
         options: Optional[Dict[str, Any]] = None,
         response_format: Optional[Any] = None,
+        think: bool = False,
     ) -> str:
         """
         Sends a single inference request to Ollama using structured JSON or JSON Schema format.
@@ -56,6 +57,7 @@ class OllamaClient:
             "stream": False,
             "format": response_format if response_format is not None else "json",
             "options": options or {"temperature": 0.1},
+            "think": think,
         }
         if system:
             payload["system"] = system

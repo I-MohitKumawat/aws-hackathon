@@ -69,6 +69,7 @@ async def ingest_otlp_traces(payload: OtlpTracesPayload, db: Session = Depends(g
     associated = 0
     unassociated = 0
     new_evidence: List[Evidence] = []
+    seen_evidence_ids = set()
 
     for resource_span in payload.resourceSpans:
         res_attrs = parse_otlp_attributes(resource_span.resource.attributes) if resource_span.resource else {}
@@ -80,6 +81,10 @@ async def ingest_otlp_traces(payload: OtlpTracesPayload, db: Session = Depends(g
                     span_id = span.spanId
                     evidence_id = f"ev_span_{span_id}"
 
+                    if evidence_id in seen_evidence_ids:
+                        accepted += 1
+                        continue
+
                     existing = db.get(Evidence, evidence_id)
                     if existing:
                         accepted += 1
@@ -88,6 +93,8 @@ async def ingest_otlp_traces(payload: OtlpTracesPayload, db: Session = Depends(g
                         else:
                             unassociated += 1
                         continue
+
+                    seen_evidence_ids.add(evidence_id)
 
                     span_attrs = parse_otlp_attributes(span.attributes)
                     # Use span-level service.name override if provided

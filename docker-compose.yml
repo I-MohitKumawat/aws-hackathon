@@ -20,7 +20,7 @@ services:
     image: ollama/ollama:latest
     container_name: incident_ollama
     ports:
-      - "11434:11434"
+      - "${OLLAMA_PORT:-11435}:11434"
     volumes:
       - ollama_models:/root/.ollama
 
@@ -30,10 +30,10 @@ services:
       dockerfile: Dockerfile
     container_name: incident_backend
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-incident_investigator}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-incident_investigator}
       OLLAMA_BASE_URL: http://ollama:11434
       LLM_MODEL: ${LLM_MODEL:-qwen3:4b}
-      OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-120.0}
+      OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-300.0}
       EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-minilm}
       ENVIRONMENT: production
     extra_hosts:
@@ -59,23 +59,61 @@ services:
     depends_on:
       - backend
 
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: incident_jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    ports:
+      - "16686:16686" # Jaeger Web UI
+
   otel-collector:
     image: otel/opentelemetry-collector-contrib:0.111.0
     container_name: incident_otel_collector
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:
-      - ./otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml
+      - ./otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:Z
     ports:
       - "4317:4317"   # OTLP gRPC receiver
       - "4318:4318"   # OTLP HTTP receiver
       - "13133:13133" # Health check
     depends_on:
       - backend
-    healthcheck:
-      test: ["CMD", "/otelcol-contrib", "healthcheck"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      - jaeger
+
+  inventory-service:
+    build:
+      context: ./services/inventory_service
+      dockerfile: Dockerfile
+    container_name: incident_inventory_service
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_SERVICE_NAME: inventory
+      SERVICE_VERSION: "1.0.0"
+      DEPLOYMENT_ENVIRONMENT: production
+      PORT: 8081
+    ports:
+      - "8081:8081"
+    depends_on:
+      - otel-collector
+
+  payment-service:
+    build:
+      context: ./services/payment_service
+      dockerfile: Dockerfile
+    container_name: incident_payment_service
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: otel-collector:4317
+      OTEL_EXPORTER_OTLP_INSECURE: "true"
+      OTEL_SERVICE_NAME: payment
+      SERVICE_VERSION: "1.0.0"
+      DEPLOYMENT_ENVIRONMENT: production
+      PORT: 8082
+    ports:
+      - "8082:8082"
+    depends_on:
+      - otel-collector
 
   checkout-service:
     build:
@@ -89,11 +127,14 @@ services:
       SERVICE_VERSION: "2.1.0"
       DEPLOYMENT_ENVIRONMENT: production
       PORT: 8080
+      INVENTORY_SERVICE_URL: http://inventory-service:8081
+      PAYMENT_SERVICE_URL: http://payment-service:8082
     ports:
       - "8080:8080"
     depends_on:
-      otel-collector:
-        condition: service_healthy
+      - otel-collector
+      - inventory-service
+      - payment-service
 
 volumes:
   postgres_data:
