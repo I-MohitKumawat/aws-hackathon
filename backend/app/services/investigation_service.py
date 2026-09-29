@@ -1,20 +1,53 @@
 import asyncio
 from datetime import datetime, timezone
 import uuid
+from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from ..database import SessionLocal
 from ..models import Incident, Evidence, InvestigationJob, InvestigationReport
+from ..agent import (
+    OllamaClient,
+    OllamaClientError,
+    SYSTEM_PROMPT,
+    build_investigation_prompt,
+    validate_model_investigation_output,
+    RawAIInvestigationOutput,
+    ReportValidationError,
+)
 
-async def execute_investigation(job_id: str):
+async def investigate_incident(
+    incident: Incident,
+    evidence_items: List[Evidence],
+    client: Optional[OllamaClient] = None,
+) -> RawAIInvestigationOutput:
     """
-    Background worker task that investigates an incident:
-    1. Sets status = running, stage = analyzing_evidence, progress = 25
-    2. Retrieves correlated evidence
-    3. Synthesizes hypothesis using local LLM / rules
-    4. Validates hypothesis evidence citations
-    5. Saves report, sets job status = completed, progress = 100
+    Performs AI-grounded investigation on an incident and its evidence:
+    1. Formulates the prompt.
+    2. Sends inference request to Ollama.
+    3. Validates and parses the model's output against the schema and evidence references.
+    """
+    ollama_client = client or OllamaClient()
+    prompt = build_investigation_prompt(incident, evidence_items)
+    valid_evidence_ids = {ev.id for ev in evidence_items}
+
+    raw_response = await ollama_client.generate(prompt=prompt, system=SYSTEM_PROMPT)
+    validated_output = validate_model_investigation_output(
+        raw_output=raw_response,
+        valid_evidence_ids=valid_evidence_ids,
+    )
+    return validated_output
+
+async def execute_investigation(job_id: str, client: Optional[OllamaClient] = None):
+    """
+    Background worker task that drives the investigation job lifecycle:
+    1. Sets status = running, stage = retrieving_evidence, progress = 20
+    2. Retrieves incident & correlated evidence from DB
+    3. Sets stage = analyzing_evidence, progress = 50
+    4. Calls investigate_incident (Ollama + Validator)
+    5. Persists report, sets job status = completed, stage = report_ready, progress = 100
+    6. On error, records failure details and sets status = failed
     """
     db: Session = SessionLocal()
     try:
@@ -27,50 +60,38 @@ async def execute_investigation(job_id: str):
         job.progress = 20
         db.commit()
 
-        await asyncio.sleep(0.5)
+        # Retrieve incident and evidence
+        incident = db.get(Incident, job.incident_id)
+        if not incident:
+            job.status = "failed"
+            job.error = f"Incident '{job.incident_id}' not found."
+            job.completed_at = datetime.now(timezone.utc)
+            db.commit()
+            return
 
-        # Retrieve evidence
         evidence_items = db.scalars(
             select(Evidence).where(Evidence.incident_id == job.incident_id)
         ).all()
 
         job.stage = "analyzing_evidence"
-        job.progress = 60
+        job.progress = 50
         db.commit()
 
-        await asyncio.sleep(0.5)
+        # Call AI investigation
+        validated_output = await investigate_incident(
+            incident=incident,
+            evidence_items=evidence_items,
+            client=client,
+        )
 
-        # Formulate hypothesis and validation
-        incident = db.get(Incident, job.incident_id)
-        service_name = incident.service if incident else "unknown"
-
-        # Check evidence for errors
-        supporting_ev_ids = [ev.id for ev in evidence_items if ev.severity == "error" or "error" in ev.message.lower() or "timeout" in ev.message.lower()]
-        if not supporting_ev_ids and evidence_items:
-            supporting_ev_ids = [evidence_items[0].id]
-
-        hypotheses = [
-            {
-                "id": f"hyp_{uuid.uuid4().hex[:6]}",
-                "description": f"A recent event or deployment in service '{service_name}' correlated with resource/connection timeouts.",
-                "status": "possible" if supporting_ev_ids else "inconclusive",
-                "supporting_evidence": supporting_ev_ids,
-                "contradicting_evidence": [],
-                "missing_evidence": [f"{service_name.capitalize()} connection pool and memory saturation metrics"],
-                "next_step": f"Inspect {service_name} resource saturation metrics and verify downstream dependency responsiveness.",
-            }
-        ]
-
-        summary = f"{incident.title if incident else 'Incident'} showed evidence of errors during the monitored window."
-
-        # Create Report
+        # Create and persist Report
         report = InvestigationReport(
             id=f"rep_{uuid.uuid4().hex[:8]}",
             job_id=job.job_id,
             incident_id=job.incident_id,
             status="completed",
-            summary=summary,
-            hypotheses_json=hypotheses,
+            summary=validated_output.summary,
+            hypotheses_json=[h.model_dump() for h in validated_output.hypotheses],
             created_at=datetime.now(timezone.utc),
         )
         db.add(report)
@@ -81,7 +102,7 @@ async def execute_investigation(job_id: str):
         job.completed_at = datetime.now(timezone.utc)
         db.commit()
 
-    except Exception as exc:
+    except (OllamaClientError, ReportValidationError, Exception) as exc:
         db.rollback()
         job = db.get(InvestigationJob, job_id)
         if job:
