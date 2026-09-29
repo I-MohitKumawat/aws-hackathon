@@ -28,6 +28,50 @@ REPORT_JSON_SCHEMA_DESCRIPTION = """{
   ]
 }"""
 
+INVESTIGATION_REPORT_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {"type": "string"},
+        "hypotheses": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "description": {"type": "string"},
+                    "status": {
+                        "type": "string",
+                        "enum": ["possible", "supported", "inconclusive"],
+                    },
+                    "supporting_evidence": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "contradicting_evidence": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "missing_evidence": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "next_step": {"type": "string"},
+                },
+                "required": [
+                    "id",
+                    "description",
+                    "status",
+                    "supporting_evidence",
+                    "contradicting_evidence",
+                    "missing_evidence",
+                    "next_step",
+                ],
+            },
+        },
+    },
+    "required": ["summary", "hypotheses"],
+}
+
 def build_investigation_prompt(incident: Incident, evidence_items: List[Evidence]) -> str:
     """Constructs a focused prompt containing the incident context and evidence items."""
     evidence_payload = []

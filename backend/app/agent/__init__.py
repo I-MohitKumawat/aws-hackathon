@@ -5,7 +5,7 @@ from .ollama_client import (
     OllamaTimeoutError,
     OllamaResponseError,
 )
-from .prompts import SYSTEM_PROMPT, build_investigation_prompt
+from .prompts import SYSTEM_PROMPT, build_investigation_prompt, INVESTIGATION_REPORT_JSON_SCHEMA
 from .validator import (
     ReportValidationError,
     RawAIInvestigationOutput,
@@ -20,6 +20,7 @@ __all__ = [
     "OllamaResponseError",
     "SYSTEM_PROMPT",
     "build_investigation_prompt",
+    "INVESTIGATION_REPORT_JSON_SCHEMA",
     "ReportValidationError",
     "RawAIInvestigationOutput",
     "validate_model_investigation_output",

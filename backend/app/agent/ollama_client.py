@@ -43,9 +43,10 @@ class OllamaClient:
         prompt: str,
         system: Optional[str] = None,
         options: Optional[Dict[str, Any]] = None,
+        response_format: Optional[Any] = None,
     ) -> str:
         """
-        Sends a single inference request to Ollama using format='json'.
+        Sends a single inference request to Ollama using structured JSON or JSON Schema format.
         Returns the raw model response string.
         """
         url = f"{self.base_url}/api/generate"
@@ -53,7 +54,7 @@ class OllamaClient:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "format": "json",
+            "format": response_format if response_format is not None else "json",
             "options": options or {"temperature": 0.1},
         }
         if system:

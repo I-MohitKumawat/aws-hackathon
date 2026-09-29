@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
     OLLAMA_BASE_URL: str = "http://localhost:11434"
-    LLM_MODEL: str = "qwen2.5:3b"
-    OLLAMA_TIMEOUT_SECONDS: float = 60.0
+    LLM_MODEL: str = "qwen3:4b"
+    OLLAMA_TIMEOUT_SECONDS: float = 120.0
     EMBEDDING_MODEL: str = "bge-small-en-v1.5"
 
     model_config = SettingsConfigDict(

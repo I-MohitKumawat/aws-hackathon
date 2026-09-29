@@ -4,7 +4,7 @@ import re
 from unittest.mock import patch
 from backend.app.agent import OllamaClient
 
-async def mock_ollama_generate(self, prompt, system=None, options=None):
+async def mock_ollama_generate(self, prompt, system=None, options=None, **kwargs):
     match = re.search(r"VALID EVIDENCE IDs:\s*(\[[^\]]+\])", prompt)
     ev_ids = json.loads(match.group(1)) if match else []
     return json.dumps({

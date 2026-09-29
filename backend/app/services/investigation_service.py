@@ -7,10 +7,12 @@ from sqlalchemy import select
 
 from ..database import SessionLocal
 from ..models import Incident, Evidence, InvestigationJob, InvestigationReport
+from ..schemas.report import Hypothesis
 from ..agent import (
     OllamaClient,
     OllamaClientError,
     SYSTEM_PROMPT,
+    INVESTIGATION_REPORT_JSON_SCHEMA,
     build_investigation_prompt,
     validate_model_investigation_output,
     RawAIInvestigationOutput,
@@ -23,16 +25,39 @@ async def investigate_incident(
     client: Optional[OllamaClient] = None,
 ) -> RawAIInvestigationOutput:
     """
-    Performs AI-grounded investigation on an incident and its evidence:
-    1. Formulates the prompt.
-    2. Sends inference request to Ollama.
-    3. Validates and parses the model's output against the schema and evidence references.
+    Executes AI-grounded incident investigation over correlated evidence:
+    1. If evidence is empty, produces a factual inconclusive report noting missing telemetry.
+    2. Otherwise, constructs the focused investigation prompt with strictly valid evidence IDs.
+    3. Requests structured inference from Ollama using the formal report JSON Schema.
+    4. Validates schema and verifies that all cited evidence IDs exist.
     """
+    if not evidence_items:
+        return RawAIInvestigationOutput(
+            summary=f"No telemetry evidence was recorded for incident '{incident.title}' within the investigated scope.",
+            hypotheses=[
+                Hypothesis(
+                    id="hyp_no_evidence",
+                    description="Insufficient telemetry evidence available to establish root-cause hypotheses.",
+                    status="inconclusive",
+                    supporting_evidence=[],
+                    contradicting_evidence=[],
+                    missing_evidence=[
+                        f"Application logs, error metrics, and distributed traces for service '{incident.service}'",
+                    ],
+                    next_step="Verify telemetry ingestion collectors and widen the investigation time window.",
+                )
+            ],
+        )
+
     ollama_client = client or OllamaClient()
     prompt = build_investigation_prompt(incident, evidence_items)
     valid_evidence_ids = {ev.id for ev in evidence_items}
 
-    raw_response = await ollama_client.generate(prompt=prompt, system=SYSTEM_PROMPT)
+    raw_response = await ollama_client.generate(
+        prompt=prompt,
+        system=SYSTEM_PROMPT,
+        response_format=INVESTIGATION_REPORT_JSON_SCHEMA,
+    )
     validated_output = validate_model_investigation_output(
         raw_output=raw_response,
         valid_evidence_ids=valid_evidence_ids,
@@ -41,13 +66,13 @@ async def investigate_incident(
 
 async def execute_investigation(job_id: str, client: Optional[OllamaClient] = None):
     """
-    Background worker task that drives the investigation job lifecycle:
+    Background worker orchestrating the investigation job lifecycle:
     1. Sets status = running, stage = retrieving_evidence, progress = 20
-    2. Retrieves incident & correlated evidence from DB
+    2. Queries incident and applies time-window filters to correlated evidence
     3. Sets stage = analyzing_evidence, progress = 50
     4. Calls investigate_incident (Ollama + Validator)
-    5. Persists report, sets job status = completed, stage = report_ready, progress = 100
-    6. On error, records failure details and sets status = failed
+    5. Persists report and sets status = completed atomically
+    6. On error, records failure details and sets status = failed with fresh session fallback
     """
     db: Session = SessionLocal()
     try:
@@ -60,7 +85,7 @@ async def execute_investigation(job_id: str, client: Optional[OllamaClient] = No
         job.progress = 20
         db.commit()
 
-        # Retrieve incident and evidence
+        # Retrieve incident
         incident = db.get(Incident, job.incident_id)
         if not incident:
             job.status = "failed"
@@ -69,9 +94,14 @@ async def execute_investigation(job_id: str, client: Optional[OllamaClient] = No
             db.commit()
             return
 
-        evidence_items = db.scalars(
-            select(Evidence).where(Evidence.incident_id == job.incident_id)
-        ).all()
+        # Query evidence applying time-window filters if specified
+        query = select(Evidence).where(Evidence.incident_id == job.incident_id)
+        if job.time_window_start is not None:
+            query = query.where(Evidence.timestamp >= job.time_window_start)
+        if job.time_window_end is not None:
+            query = query.where(Evidence.timestamp <= job.time_window_end)
+
+        evidence_items = db.scalars(query.order_by(Evidence.timestamp.asc())).all()
 
         job.stage = "analyzing_evidence"
         job.progress = 50
@@ -84,7 +114,7 @@ async def execute_investigation(job_id: str, client: Optional[OllamaClient] = No
             client=client,
         )
 
-        # Create and persist Report
+        # Create and persist Report atomically with job completion
         report = InvestigationReport(
             id=f"rep_{uuid.uuid4().hex[:8]}",
             job_id=job.job_id,
@@ -100,15 +130,31 @@ async def execute_investigation(job_id: str, client: Optional[OllamaClient] = No
         job.stage = "report_ready"
         job.progress = 100
         job.completed_at = datetime.now(timezone.utc)
+        job.error = None
         db.commit()
 
-    except (OllamaClientError, ReportValidationError, Exception) as exc:
-        db.rollback()
-        job = db.get(InvestigationJob, job_id)
-        if job:
-            job.status = "failed"
-            job.error = str(exc)
-            job.completed_at = datetime.now(timezone.utc)
-            db.commit()
+    except Exception as exc:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+
+        # Use an isolated session to ensure job failure is reliably recorded
+        try:
+            fail_db = SessionLocal()
+            try:
+                fail_job = fail_db.get(InvestigationJob, job_id)
+                if fail_job:
+                    fail_job.status = "failed"
+                    fail_job.error = str(exc)
+                    fail_job.completed_at = datetime.now(timezone.utc)
+                    fail_db.commit()
+            finally:
+                fail_db.close()
+        except Exception as inner_exc:
+            print(f"CRITICAL: Failed to update investigation job {job_id} to failed state: {inner_exc}")
     finally:
-        db.close()
+        try:
+            db.close()
+        except Exception:
+            pass
