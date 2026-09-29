@@ -53,6 +53,25 @@ export default function DashboardPage() {
             Real-time telemetry correlation and automated AI root cause investigation.
           </p>
         </div>
+        <div className="flex items-center space-x-2">
+          <a
+            href="/store"
+            className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 hover:border-slate-600 text-xs font-medium transition-all shadow-sm flex items-center space-x-1.5"
+          >
+            <span>🛒</span>
+            <span>Demo Store</span>
+          </a>
+          <a
+            href="/simulate"
+            className="px-3 py-1.5 rounded-lg bg-rose-950/60 hover:bg-rose-900/60 text-rose-300 border border-rose-800/80 text-xs font-medium transition-all shadow-sm flex items-center space-x-1.5"
+          >
+            <span>⚡</span>
+            <span>Fault Injection</span>
+          </a>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
         <div className="flex flex-wrap items-center gap-2">
           {/* Status filters */}
           <div className="flex items-center space-x-1 bg-slate-950/60 p-1 rounded-lg border border-slate-800">

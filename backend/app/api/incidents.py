@@ -75,6 +75,7 @@ def list_incidents(
     )
 
 @router.post("/detect", response_model=List[IncidentResponse])
+@router.post("/evaluate-rules", response_model=List[IncidentResponse])
 def run_detection_evaluation(
     window_seconds: Optional[int] = Query(default=None, ge=5, le=3600),
     background_tasks: BackgroundTasks = None,

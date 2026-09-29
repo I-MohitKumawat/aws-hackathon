@@ -99,11 +99,21 @@ INVESTIGATION_REPORT_JSON_SCHEMA = {
     "required": ["summary", "hypotheses"],
 }
 
+def clean_metadata_for_prompt(meta: dict) -> dict:
+    if not isinstance(meta, dict):
+        return {}
+    cleaned = {}
+    for k, v in meta.items():
+        if k in ("resource_attributes", "telemetry.sdk.language", "telemetry.sdk.version", "telemetry.sdk.name", "telemetry.sdk"):
+            continue
+        cleaned[k] = v
+    return cleaned
+
 def build_investigation_prompt(incident: Incident, evidence_items: List[Evidence]) -> str:
     """Constructs a focused prompt containing the incident context and evidence items."""
     evidence_payload = []
     for ev in evidence_items:
-        evidence_payload.append({
+        item = {
             "id": ev.id,
             "type": ev.type,
             "timestamp": ev.timestamp.isoformat() if hasattr(ev.timestamp, "isoformat") else str(ev.timestamp),
@@ -112,8 +122,11 @@ def build_investigation_prompt(incident: Incident, evidence_items: List[Evidence
             "message": ev.message,
             "trace_id": ev.trace_id,
             "source": ev.source,
-            "metadata": ev.metadata_json or {},
-        })
+        }
+        cleaned_meta = clean_metadata_for_prompt(ev.metadata_json or {})
+        if cleaned_meta:
+            item["metadata"] = cleaned_meta
+        evidence_payload.append(item)
 
     incident_payload = {
         "id": incident.id,
@@ -127,10 +140,10 @@ def build_investigation_prompt(incident: Incident, evidence_items: List[Evidence
     prompt = f"""Investigate the following incident based strictly on the provided evidence:
 
 INCIDENT DETAILS:
-{json.dumps(incident_payload, indent=2)}
+{json.dumps(incident_payload, indent=1)}
 
 AVAILABLE EVIDENCE (Total: {len(evidence_items)}):
-{json.dumps(evidence_payload, indent=2)}
+{json.dumps(evidence_payload, indent=1)}
 
 VALID EVIDENCE IDs:
 {json.dumps([ev.id for ev in evidence_items])}

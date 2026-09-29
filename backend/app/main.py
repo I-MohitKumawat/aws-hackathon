@@ -11,7 +11,7 @@ from .core.exceptions import AppException
 from .api.health import router as health_router
 from .api.incidents import router as incidents_router
 from .api.telemetry import router as telemetry_router
-from .api.evidence import router as evidence_router, traces_router
+from .api.evidence import router as evidence_router, traces_router, global_evidence_router
 from .api.investigations import (
     incident_investigations_router,
     investigations_router,
@@ -216,6 +216,7 @@ app.include_router(health_router, prefix="/api/v1")
 app.include_router(incidents_router, prefix="/api/v1")
 app.include_router(telemetry_router, prefix="/api/v1")
 app.include_router(evidence_router, prefix="/api/v1")
+app.include_router(global_evidence_router, prefix="/api/v1")
 app.include_router(traces_router, prefix="/api/v1")
 app.include_router(incident_investigations_router, prefix="/api/v1")
 app.include_router(investigations_router, prefix="/api/v1")

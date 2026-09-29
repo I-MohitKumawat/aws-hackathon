@@ -3,6 +3,7 @@
 import { useEffect, useState, use } from "react";
 import { api } from "../../../lib/api-client";
 import { Incident, Evidence, InvestigationJob, InvestigationReport } from "../../../lib/types";
+import TraceWaterfall from "../../../components/TraceWaterfall";
 
 export default function IncidentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -16,6 +17,8 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
   const [loading, setLoading] = useState<boolean>(true);
   const [investigating, setInvestigating] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [highlightedEvidenceId, setHighlightedEvidenceId] = useState<string | null>(null);
+  const [activeWaterfallTraceId, setActiveWaterfallTraceId] = useState<string | null>(null);
 
   // Load Incident and Evidence
   useEffect(() => {
@@ -117,6 +120,23 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
     if (filterType === "all") return true;
     return item.type === filterType;
   });
+
+  const scrollToEvidence = (evId: string) => {
+    const targetItem = evidenceList.find((e) => e.id === evId);
+    if (targetItem && filterType !== "all" && targetItem.type !== filterType) {
+      setFilterType("all");
+    }
+    setHighlightedEvidenceId(evId);
+    setTimeout(() => {
+      const el = document.getElementById(`evidence-${evId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 100);
+    setTimeout(() => {
+      setHighlightedEvidenceId((current) => (current === evId ? null : current));
+    }, 3500);
+  };
 
   return (
     <div className="space-y-8">
@@ -283,9 +303,15 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                     <div className="flex items-center space-x-2 flex-wrap gap-1">
                       <span className="text-emerald-400 font-medium">Supporting Evidence:</span>
                       {hyp.supporting_evidence.map((evId) => (
-                        <span key={evId} className="px-2 py-0.5 rounded bg-emerald-950/80 text-emerald-300 font-mono">
-                          {evId}
-                        </span>
+                        <button
+                          key={evId}
+                          onClick={() => scrollToEvidence(evId)}
+                          title={`Click to inspect evidence ${evId}`}
+                          className="px-2 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 font-mono transition-colors border border-emerald-800/60 cursor-pointer flex items-center space-x-1"
+                        >
+                          <span>{evId}</span>
+                          <span className="text-[10px] text-emerald-400">↓</span>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -294,9 +320,15 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                     <div className="flex items-center space-x-2 flex-wrap gap-1">
                       <span className="text-rose-400 font-medium">Contradicting Evidence:</span>
                       {hyp.contradicting_evidence.map((evId) => (
-                        <span key={evId} className="px-2 py-0.5 rounded bg-rose-950/80 text-rose-300 font-mono">
-                          {evId}
-                        </span>
+                        <button
+                          key={evId}
+                          onClick={() => scrollToEvidence(evId)}
+                          title={`Click to inspect evidence ${evId}`}
+                          className="px-2 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 text-rose-300 font-mono transition-colors border border-rose-800/60 cursor-pointer flex items-center space-x-1"
+                        >
+                          <span>{evId}</span>
+                          <span className="text-[10px] text-rose-400">↓</span>
+                        </button>
                       ))}
                     </div>
                   )}
@@ -410,12 +442,18 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                   ? "bg-blue-950/70 text-blue-300 border border-blue-800/60"
                   : "bg-slate-800/80 text-slate-400 border border-slate-700/60";
 
+              const isHighlighted = highlightedEvidenceId === item.id;
               const meta = item.metadata || {};
 
               return (
                 <div
                   key={item.id}
-                  className="p-3.5 rounded-lg bg-slate-900/50 border border-slate-800/80 hover:border-slate-700 transition-colors flex flex-col md:flex-row md:items-start justify-between gap-3 text-xs"
+                  id={`evidence-${item.id}`}
+                  className={`p-3.5 rounded-lg border transition-all flex flex-col md:flex-row md:items-start justify-between gap-3 text-xs ${
+                    isHighlighted
+                      ? "bg-indigo-950/70 border-indigo-400 ring-2 ring-indigo-500 shadow-lg shadow-indigo-500/20 animate-pulse"
+                      : "bg-slate-900/50 border-slate-800/80 hover:border-slate-700"
+                  }`}
                 >
                   <div className="space-y-1.5 flex-1 min-w-0">
                     <div className="flex items-center space-x-2 flex-wrap gap-y-1">
@@ -446,12 +484,25 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
                     <p className="text-sm text-slate-200 break-words font-sans">{item.message}</p>
                   </div>
 
-                  <div className="text-slate-500 flex flex-col md:items-end font-mono text-[11px] shrink-0 space-y-0.5">
+                  <div className="text-slate-500 flex flex-col md:items-end font-mono text-[11px] shrink-0 space-y-1">
                     <span>{new Date(item.timestamp).toISOString()}</span>
                     {item.trace_id ? (
-                      <span className="text-indigo-400 hover:text-indigo-300" title={`Span: ${meta.span_id || "N/A"}`}>
-                        trace:{item.trace_id.slice(0, 16)}...
-                      </span>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => setActiveWaterfallTraceId(item.trace_id!)}
+                          className="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 hover:bg-indigo-900 transition-colors text-[10px] cursor-pointer"
+                        >
+                          Trace Waterfall ⚡
+                        </button>
+                        <a
+                          href={`http://localhost:16686/trace/${item.trace_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-slate-400 hover:text-indigo-300 underline text-[10px]"
+                        >
+                          Jaeger ↗
+                        </a>
+                      </div>
                     ) : null}
                     {meta.span_id ? (
                       <span className="text-slate-500 text-[10px]">
@@ -465,6 +516,15 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
           </div>
         )}
       </div>
+
+      {/* Trace Waterfall Modal */}
+      {activeWaterfallTraceId && (
+        <TraceWaterfall
+          traceId={activeWaterfallTraceId}
+          incidentId={incidentId}
+          onClose={() => setActiveWaterfallTraceId(null)}
+        />
+      )}
     </div>
   );
 }

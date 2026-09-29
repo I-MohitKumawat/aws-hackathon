@@ -74,13 +74,15 @@ async def retrieve_evidence_for_investigation(
     client = embedding_client or EmbeddingClient()
     unembedded = [ev for ev in candidates if ev.embedding is None]
     if unembedded:
+        # Cap batch to at most 50 items to prevent unbounded delays when telemetry volume is high
+        unembedded_batch = unembedded[:50]
         try:
-            texts = [format_evidence_for_embedding(ev) for ev in unembedded]
+            texts = [format_evidence_for_embedding(ev) for ev in unembedded_batch]
             embeddings = await client.generate_embeddings_batch(texts)
-            for ev, emb in zip(unembedded, embeddings):
+            for ev, emb in zip(unembedded_batch, embeddings):
                 ev.embedding = emb
             db.commit()
-            logger.info("Successfully generated embeddings for %d candidate evidence items on-the-fly.", len(unembedded))
+            logger.info("Successfully generated embeddings for %d candidate evidence items on-the-fly.", len(unembedded_batch))
         except Exception as exc:
             logger.warning("Could not generate embeddings on-the-fly for evidence items (%s). Proceeding with fallback.", exc)
 

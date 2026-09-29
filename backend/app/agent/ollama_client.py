@@ -51,12 +51,19 @@ class OllamaClient:
         Returns the raw model response string.
         """
         url = f"{self.base_url}/api/generate"
+        default_options: Dict[str, Any] = {
+            "temperature": 0.1,
+            "num_ctx": 4096,
+        }
+        if options:
+            default_options.update(options)
+
         payload: Dict[str, Any] = {
             "model": self.model,
             "prompt": prompt,
             "stream": False,
             "format": response_format if response_format is not None else "json",
-            "options": options or {"temperature": 0.1},
+            "options": default_options,
             "think": think,
         }
         if system:

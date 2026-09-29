@@ -89,6 +89,22 @@ class InventoryOutOfStockError(Exception):
     """Simulated inventory out of stock exception."""
     pass
 
+class ProductItem(BaseModel):
+    sku: str
+    name: str
+    price: float
+    category: str
+    stock: int
+    warehouse: str
+
+CATALOG: List[ProductItem] = [
+    ProductItem(sku="sku_keyboard_mech", name="Wireless Mechanical Keyboard", price=129.99, category="Peripherals", stock=45, warehouse="warehouse-east"),
+    ProductItem(sku="sku_headphones_anc", name="Noise-Cancelling Headphones", price=199.99, category="Audio", stock=28, warehouse="warehouse-east"),
+    ProductItem(sku="sku_monitor_4k", name="32\" 4K USB-C Monitor", price=449.99, category="Displays", stock=14, warehouse="warehouse-east"),
+    ProductItem(sku="sku_desk_chair", name="Ergonomic Mesh Chair", price=299.99, category="Furniture", stock=8, warehouse="warehouse-east"),
+    ProductItem(sku="sku_laptop_stand", name="Aluminum Laptop Stand", price=49.99, category="Accessories", stock=62, warehouse="warehouse-east"),
+]
+
 class ReserveRequest(BaseModel):
     items: List[str] = ["item_alpha", "item_beta"]
     order_id: Optional[str] = None
@@ -109,16 +125,25 @@ def health():
         "otlp_endpoint": grpc_endpoint,
     }
 
+@app.get("/inventory/items", response_model=List[ProductItem])
+def list_inventory_items():
+    """Returns the available e-commerce product catalog with stock levels and warehouse locations."""
+    return CATALOG
+
 @app.post("/inventory/reserve", response_model=ReserveResponse)
 def reserve_inventory(
     payload: ReserveRequest,
     simulate_error: bool = Query(default=False),
+    latency_ms: int = Query(default=0, ge=0, le=30000, description="Inject latency delay in milliseconds"),
     x_incident_id: Optional[str] = Header(default=None, alias="X-Incident-Id"),
 ):
     """
     Validates item availability and reserves inventory.
-    Emits child spans and supports controllable out-of-stock failures.
+    Emits child spans and supports controllable out-of-stock failures and latency injection.
     """
+    if latency_ms > 0:
+        time.sleep(latency_ms / 1000.0)
+
     current_span = trace.get_current_span()
     if x_incident_id and current_span:
         current_span.set_attribute("incident.id", x_incident_id)
@@ -138,7 +163,7 @@ def reserve_inventory(
         stock_span.set_attribute("inventory.items_count", len(payload.items))
         stock_span.set_attribute("inventory.warehouse", "warehouse-east")
 
-        if simulate_error or "out_of_stock" in payload.items:
+        if simulate_error or "out_of_stock" in payload.items or any(i in ["sku_out_of_stock", "item_out_of_stock"] for i in payload.items):
             err_msg = f"Inventory allocation failed: Item 'item_beta' is out of stock in warehouse-east (requested {len(payload.items)} items)"
             exc = InventoryOutOfStockError(err_msg)
             stock_span.record_exception(exc)

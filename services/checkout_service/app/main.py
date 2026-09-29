@@ -131,12 +131,32 @@ def health():
         "payment_url": PAYMENT_SERVICE_URL,
     }
 
+FALLBACK_CATALOG = [
+    {"sku": "sku_keyboard_mech", "name": "Wireless Mechanical Keyboard", "price": 129.99, "category": "Peripherals", "stock": 45, "warehouse": "warehouse-east"},
+    {"sku": "sku_headphones_anc", "name": "Noise-Cancelling Headphones", "price": 199.99, "category": "Audio", "stock": 28, "warehouse": "warehouse-east"},
+    {"sku": "sku_monitor_4k", "name": "32\" 4K USB-C Monitor", "price": 449.99, "category": "Displays", "stock": 14, "warehouse": "warehouse-east"},
+    {"sku": "sku_desk_chair", "name": "Ergonomic Mesh Chair", "price": 299.99, "category": "Furniture", "stock": 8, "warehouse": "warehouse-east"},
+    {"sku": "sku_laptop_stand", "name": "Aluminum Laptop Stand", "price": 49.99, "category": "Accessories", "stock": 62, "warehouse": "warehouse-east"},
+]
+
+@app.get("/products")
+def get_products():
+    """Proxies product catalog from inventory service with local fallback."""
+    try:
+        resp = requests.get(f"{INVENTORY_SERVICE_URL}/inventory/items", timeout=3)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception as exc:
+        logger.warning("Could not fetch items from inventory service: %s. Using fallback catalog.", exc)
+    return FALLBACK_CATALOG
+
 @app.post("/checkout", response_model=CheckoutResponse)
 def execute_checkout(
     payload: Optional[CheckoutRequest] = None,
     simulate_error: bool = Query(default=False, description="Simulate checkout DB connection pool failure"),
     simulate_inventory_error: bool = Query(default=False, description="Simulate downstream inventory out-of-stock failure"),
     simulate_payment_error: bool = Query(default=False, description="Simulate downstream payment gateway failure"),
+    latency_ms: int = Query(default=0, ge=0, le=30000, description="Inject latency delay in milliseconds"),
     x_incident_id: Optional[str] = Header(default=None, alias="X-Incident-Id"),
 ):
     """
@@ -146,6 +166,15 @@ def execute_checkout(
     3. Calls Inventory Service to reserve stock (HTTP client span + W3C context propagation)
     4. Calls Payment Service to process charge (HTTP client span + W3C context propagation)
     """
+    if not isinstance(simulate_error, bool):
+        simulate_error = False
+    if not isinstance(simulate_inventory_error, bool):
+        simulate_inventory_error = False
+    if not isinstance(simulate_payment_error, bool):
+        simulate_payment_error = False
+    if not isinstance(latency_ms, (int, float)):
+        latency_ms = 0
+
     sim_error = simulate_error or (payload.simulate_error if payload else False)
     sim_inv = simulate_inventory_error or (payload.simulate_inventory_error if payload else False)
     sim_pay = simulate_payment_error or (payload.simulate_payment_error if payload else False)
@@ -164,6 +193,10 @@ def execute_checkout(
         metric_attrs["incident.id"] = x_incident_id
 
     logger.info("Order %s initiated with %d items (total: $%.2f)", order_id, len(items), total_val, extra=extra_tags)
+
+    if latency_ms > 0:
+        logger.warning("Injecting artificial latency of %d ms for order %s", latency_ms, order_id, extra=extra_tags)
+        time.sleep(latency_ms / 1000.0)
 
     # Step 1: Validate Cart (Internal Span)
     with tracer.start_as_current_span("validate_cart") as span:
@@ -372,3 +405,34 @@ def fail_checkout(
         simulate_payment_error=(error_type == "payment"),
         x_incident_id=x_incident_id,
     )
+
+@app.post("/checkout/simulate/{failure_type}")
+def simulate_failure(
+    failure_type: str,
+    x_incident_id: Optional[str] = Header(default=None, alias="X-Incident-Id"),
+):
+    """
+    Controlled fault-injection endpoint supporting:
+    - db_pool_exhaustion: Database pool timeout (5000ms, 20/20 active)
+    - inventory_out_of_stock: Warehouse out-of-stock conflict (409)
+    - payment_gateway_declined: Gateway card decline (402)
+    - sustained_latency: Injects 3500ms delay causing latency metric spikes
+    """
+    ft = failure_type.lower()
+    return execute_checkout(
+        payload=None,
+        simulate_error=(ft in ("db_pool_exhaustion", "db_pool", "checkout", "pool")),
+        simulate_inventory_error=(ft in ("inventory_out_of_stock", "inventory", "stock")),
+        simulate_payment_error=(ft in ("payment_gateway_declined", "payment", "card_declined")),
+        latency_ms=3500 if ft in ("sustained_latency", "latency", "slow") else 0,
+        x_incident_id=x_incident_id,
+    ) if ft in (
+        "db_pool_exhaustion", "db_pool", "checkout", "pool",
+        "inventory_out_of_stock", "inventory", "stock",
+        "payment_gateway_declined", "payment", "card_declined",
+        "sustained_latency", "latency", "slow",
+    ) else (_ for _ in ()).throw(HTTPException(
+        status_code=400,
+        detail=f"Unknown failure type '{failure_type}'. Supported: db_pool_exhaustion, inventory_out_of_stock, payment_gateway_declined, sustained_latency",
+    ))
+
