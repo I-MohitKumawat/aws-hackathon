@@ -184,7 +184,7 @@ Embedding model
 
 |
 
-BGE-small-en-v1.5
+all-minilm (384d)
 
 |
 

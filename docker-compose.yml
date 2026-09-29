@@ -34,7 +34,7 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       LLM_MODEL: ${LLM_MODEL:-qwen3:4b}
       OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-120.0}
-      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-bge-small-en-v1.5}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-all-minilm}
       ENVIRONMENT: production
     extra_hosts:
       - "host.docker.internal:host-gateway"

@@ -8,7 +8,7 @@ async def test_live_embedding_generation():
     """
     Opt-in live integration test that runs against a live local Ollama embedding instance.
     To execute: RUN_LIVE_EMBEDDING=true pytest backend/tests/test_live_embedding.py
-    Prerequisite: 'ollama pull bge-small-en-v1.5' must be run on the host.
+    Prerequisite: 'ollama pull all-minilm' must be run on the host.
     """
     if os.environ.get("RUN_LIVE_EMBEDDING", "").lower() != "true":
         pytest.skip("Skipping live embedding test. Set RUN_LIVE_EMBEDDING=true to run against live local Ollama embedding model.")

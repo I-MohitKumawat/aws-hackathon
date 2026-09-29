@@ -56,7 +56,7 @@ async def test_embedding_client_success_embed_endpoint():
     mock_response = httpx.Response(
         status_code=200,
         json={
-            "model": "bge-small-en-v1.5",
+            "model": "all-minilm",
             "embeddings": [
                 [0.1] * 384,
                 [0.2] * 384,
@@ -80,7 +80,7 @@ async def test_embedding_client_single_generate():
     mock_response = httpx.Response(
         status_code=200,
         json={
-            "model": "bge-small-en-v1.5",
+            "model": "all-minilm",
             "embeddings": [[0.42] * 384],
         },
         request=httpx.Request("POST", "http://localhost:11434/api/embed"),
@@ -123,7 +123,7 @@ async def test_embedding_client_legacy_embeddings_fallback():
 async def test_embedding_client_model_unavailable_error():
     mock_response = httpx.Response(
         status_code=404,
-        text='{"error":"model \\"bge-small-en-v1.5\\" not found, try pulling it first"}',
+        text='{"error":"model \\"all-minilm\\" not found, try pulling it first"}',
         request=httpx.Request("POST", "http://localhost:11434/api/embed"),
     )
     mock_http = AsyncMock(spec=httpx.AsyncClient)
