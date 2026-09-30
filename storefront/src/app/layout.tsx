@@ -3,8 +3,8 @@ import "./globals.css";
 import Navbar from "../components/Navbar";
 
 export const metadata: Metadata = {
-  title: "Incident Investigator — Telemetry & Root-Cause AI",
-  description: "Minimalist telemetry correlation and AI root-cause investigator inspired by Jaeger",
+  title: "CloudShop — E-Commerce Storefront",
+  description: "Online store generating distributed telemetry for AI Incident Investigator",
 };
 
 export default function RootLayout({
@@ -14,9 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-[#f8f9fa] text-slate-800 antialiased flex flex-col">
+      <body className="min-h-screen bg-slate-950 text-slate-100 antialiased">
         <Navbar />
-        <main className="flex-1 w-full px-4 sm:px-6 py-4 max-w-[1600px] mx-auto">
+        <main className="max-w-7xl mx-auto px-6 py-8">
           {children}
         </main>
       </body>

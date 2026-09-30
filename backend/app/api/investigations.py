@@ -85,6 +85,45 @@ def start_investigation(
         created_at=job.created_at,
     )
 
+@incident_investigations_router.get("/{id}/report", response_model=InvestigationReportResponse)
+def get_latest_incident_report(
+    id: str,
+    db: Session = Depends(get_db),
+    _role: str = Depends(require_roles([Role.VIEWER.value, Role.INVESTIGATOR.value, Role.ADMIN.value])),
+):
+    incident = db.get(Incident, id)
+    if not incident:
+        raise AppException(
+            status_code=404,
+            code="INCIDENT_NOT_FOUND",
+            message="The requested incident was not found.",
+            details={"incident_id": id},
+        )
+
+    report = db.scalar(
+        select(InvestigationReport)
+        .where(InvestigationReport.incident_id == id)
+        .order_by(InvestigationReport.created_at.desc())
+    )
+    if not report:
+        raise AppException(
+            status_code=404,
+            code="REPORT_NOT_FOUND",
+            message="No investigation report found for this incident.",
+            details={"incident_id": id},
+        )
+
+    hypotheses = [Hypothesis(**h) for h in (report.hypotheses_json or [])]
+
+    return InvestigationReportResponse(
+        id=report.id,
+        incident_id=report.incident_id,
+        status=report.status,
+        summary=report.summary,
+        hypotheses=hypotheses,
+        created_at=report.created_at,
+    )
+
 @investigations_router.get("/{job_id}", response_model=InvestigationJobStatusResponse)
 def get_investigation_status(
     job_id: str,

@@ -49,6 +49,8 @@ def list_incidents(
     offset: int = Query(default=0, ge=0),
     status: Optional[str] = Query(default=None),
     source: Optional[str] = Query(default=None),
+    service: Optional[str] = Query(default=None),
+    severity: Optional[str] = Query(default=None),
     db: Session = Depends(get_db),
     _role: str = Depends(require_roles([Role.VIEWER.value, Role.INVESTIGATOR.value, Role.ADMIN.value])),
 ):
@@ -62,6 +64,14 @@ def list_incidents(
     if source:
         query = query.where(Incident.source == source)
         count_query = count_query.where(Incident.source == source)
+
+    if service:
+        query = query.where(Incident.service == service)
+        count_query = count_query.where(Incident.service == service)
+
+    if severity:
+        query = query.where(Incident.severity == severity)
+        count_query = count_query.where(Incident.severity == severity)
 
     total = db.scalar(count_query) or 0
     query = query.order_by(Incident.created_at.desc()).offset(offset).limit(limit)

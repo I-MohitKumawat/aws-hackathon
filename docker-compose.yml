@@ -61,6 +61,20 @@ services:
     depends_on:
       - backend
 
+  storefront:
+    build:
+      context: ./storefront
+      dockerfile: Dockerfile
+    container_name: incident_storefront
+    environment:
+      PORT: 3001
+      NEXT_PUBLIC_CHECKOUT_URL: http://localhost:8080
+      NEXT_PUBLIC_INVESTIGATOR_URL: http://localhost:3000
+    ports:
+      - "3001:3001"
+    depends_on:
+      - checkout-service
+
   jaeger:
     image: jaegertracing/all-in-one:latest
     container_name: incident_jaeger

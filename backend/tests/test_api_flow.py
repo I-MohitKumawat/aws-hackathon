@@ -109,7 +109,7 @@ def test_full_api_investigation_lifecycle(client):
 
         assert status_data["status"] == "completed"
 
-        # 8. Retrieve Report
+        # 8. Retrieve Report via Job ID and Incident ID
         res = client.get(f"/api/v1/investigations/{job_id}/report")
         assert res.status_code == 200
         report = res.json()
@@ -117,6 +117,18 @@ def test_full_api_investigation_lifecycle(client):
         assert report["status"] == "completed"
         assert len(report["hypotheses"]) > 0
         assert report["hypotheses"][0]["status"] in ["possible", "supported"]
+
+        # 8b. Retrieve Report directly by Incident ID
+        res_inc_rep = client.get(f"/api/v1/incidents/{incident_id}/report")
+        assert res_inc_rep.status_code == 200
+        report_by_inc = res_inc_rep.json()
+        assert report_by_inc["id"] == report["id"]
+        assert report_by_inc["incident_id"] == incident_id
+        assert report_by_inc["summary"] == report["summary"]
+
+        # Verify 404 on nonexistent incident report
+        res_404 = client.get("/api/v1/incidents/nonexistent-id/report")
+        assert res_404.status_code == 404
 
         # 9. Update Incident Status
         patch_payload = {

@@ -31,34 +31,20 @@ export default function Navbar() {
 
   const navItems = [
     { name: "Incidents", href: "/" },
-    { name: "Demo Store", href: "/store" },
-    { name: "Fault Injection", href: "/simulate" },
     { name: "Live Telemetry", href: "/telemetry" },
   ];
 
   return (
     <>
-      <header className="border-b border-slate-800 bg-slate-900/70 backdrop-blur sticky top-0 z-40 px-6 py-3.5 flex items-center justify-between">
-        <div className="flex items-center space-x-6">
-          <Link href="/" className="flex items-center space-x-3 group">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-500 flex items-center justify-center font-bold text-white shadow-lg shadow-indigo-500/25 group-hover:scale-105 transition-transform">
-              AI
-            </div>
-            <div>
-              <div className="flex items-center space-x-1.5">
-                <span className="text-sm font-bold leading-tight text-white tracking-tight">
-                  Incident Investigator
-                </span>
-                <span className="text-[10px] uppercase font-semibold bg-indigo-950 text-indigo-400 border border-indigo-800/80 px-1.5 py-0.2 rounded">
-                  v2.0
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-400">Autonomous Telemetry & AI Diagnosis</p>
-            </div>
+      <header className="bg-[#111625] text-slate-200 border-b border-slate-800 sticky top-0 z-40 px-4 h-11 flex items-center justify-between shadow-sm select-none">
+        <div className="flex items-center space-x-6 h-full">
+          <Link href="/" className="flex items-center space-x-2 font-bold tracking-tight text-white hover:text-teal-300 transition-colors">
+            <span className="w-3 h-3 bg-teal-500 rounded-sm inline-block"></span>
+            <span className="text-sm font-semibold tracking-normal uppercase">Incident Investigator</span>
           </Link>
 
-          {/* Navigation Links */}
-          <nav className="hidden md:flex items-center space-x-1">
+          {/* Navigation Tabs */}
+          <nav className="flex items-center space-x-1 h-full">
             {navItems.map((item) => {
               const active =
                 item.href === "/"
@@ -69,53 +55,56 @@ export default function Navbar() {
                 <Link
                   key={item.name}
                   href={item.href}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  className={`h-full flex items-center px-3.5 text-xs transition-colors border-b-2 font-medium ${
                     active
-                      ? "bg-slate-800 text-white shadow-sm font-semibold border border-slate-700/60"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                      ? "border-teal-500 text-white font-semibold"
+                      : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
                   }`}
                 >
                   {item.name}
                 </Link>
               );
             })}
+
+            <a
+              href="http://localhost:16686"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-full flex items-center px-3 text-xs text-slate-400 hover:text-teal-300 hover:bg-slate-800/40 border-b-2 border-transparent transition-colors font-mono"
+            >
+              Jaeger UI ↗
+            </a>
           </nav>
         </div>
 
-        {/* Status Indicator & Health Trigger */}
+        {/* System Health Status Indicator */}
         <div className="flex items-center space-x-3 text-xs">
-          <a
-            href="http://localhost:16686"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-mono text-slate-400 hover:text-indigo-300 hover:bg-slate-800/60 border border-slate-800 transition-colors"
-          >
-            Jaeger UI ↗
-          </a>
-
           <button
             onClick={() => setShowHealthModal(true)}
-            className="inline-flex items-center px-3 py-1 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-700 transition-all cursor-pointer shadow-sm"
+            title="Click to view detailed component health"
+            className="flex items-center space-x-2 px-2.5 py-1 rounded bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 text-slate-300 text-[11px] transition-colors cursor-pointer"
           >
             <span
-              className={`w-2 h-2 mr-2 rounded-full ${
+              className={`w-2 h-2 rounded-full ${
                 isHealthy === true
-                  ? "bg-emerald-400 shadow-sm shadow-emerald-400/50 animate-pulse"
+                  ? "bg-teal-400"
                   : isHealthy === false
-                  ? "bg-rose-400"
-                  : "bg-amber-400 animate-pulse"
+                  ? "bg-rose-500 animate-pulse"
+                  : "bg-slate-500"
               }`}
             ></span>
-            <span className="text-slate-200">
-              {isHealthy === true ? "7 Services Active" : isHealthy === false ? "Health Degraded" : "Pinging Services..."}
+            <span className="font-mono">
+              {isHealthy === true
+                ? "System Healthy"
+                : isHealthy === false
+                ? "Degraded"
+                : "Checking..."}
             </span>
           </button>
         </div>
       </header>
 
-      {showHealthModal && (
-        <ServiceHealthModal onClose={() => setShowHealthModal(false)} />
-      )}
+      {showHealthModal && <ServiceHealthModal onClose={() => setShowHealthModal(false)} />}
     </>
   );
 }

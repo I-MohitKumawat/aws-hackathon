@@ -1,9 +1,24 @@
 "use client";
 
 import { useEffect, useState, use } from "react";
+import Link from "next/link";
 import { api } from "../../../lib/api-client";
 import { Incident, Evidence, InvestigationJob, InvestigationReport } from "../../../lib/types";
 import TraceWaterfall from "../../../components/TraceWaterfall";
+
+const serviceColorMap: Record<string, { bg: string; text: string; border: string }> = {
+  checkout: { bg: "bg-teal-50", text: "text-teal-800", border: "border-teal-300" },
+  inventory: { bg: "bg-purple-50", text: "text-purple-800", border: "border-purple-300" },
+  payment: { bg: "bg-emerald-50", text: "text-emerald-800", border: "border-emerald-300" },
+  backend: { bg: "bg-sky-50", text: "text-sky-800", border: "border-sky-300" },
+};
+
+const severityColorMap: Record<string, { bg: string; text: string; border: string }> = {
+  critical: { bg: "bg-red-50", text: "text-red-700", border: "border-red-300" },
+  high: { bg: "bg-orange-50", text: "text-orange-700", border: "border-orange-300" },
+  medium: { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-300" },
+  low: { bg: "bg-blue-50", text: "text-blue-700", border: "border-blue-300" },
+};
 
 export default function IncidentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -16,28 +31,43 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
 
   const [loading, setLoading] = useState<boolean>(true);
   const [investigating, setInvestigating] = useState<boolean>(false);
+  const [resolving, setResolving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Interaction states
+  const [filterType, setFilterType] = useState<"all" | "trace" | "log" | "metric">("all");
+  const [searchEvidence, setSearchEvidence] = useState<string>("");
   const [highlightedEvidenceId, setHighlightedEvidenceId] = useState<string | null>(null);
   const [activeWaterfallTraceId, setActiveWaterfallTraceId] = useState<string | null>(null);
+  const [expandedEvidenceIds, setExpandedEvidenceIds] = useState<Record<string, boolean>>({});
 
-  // Load Incident and Evidence
-  useEffect(() => {
-    async function loadData() {
-      try {
-        setLoading(true);
-        setError(null);
-        const [incData, evData] = await Promise.all([
-          api.getIncident(incidentId),
-          api.getIncidentEvidence(incidentId),
-        ]);
-        setIncident(incData);
-        setEvidenceList(evData.items);
-      } catch (err: any) {
-        setError(err.message || "Failed to load incident details");
-      } finally {
-        setLoading(false);
+  const toggleExpand = (id: string) => {
+    setExpandedEvidenceIds((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  // Load Incident, Evidence, and existing Report
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const [incData, evData, repData] = await Promise.all([
+        api.getIncident(incidentId),
+        api.getIncidentEvidence(incidentId),
+        api.getIncidentReport(incidentId).catch(() => null),
+      ]);
+      setIncident(incData);
+      setEvidenceList(evData.items);
+      if (repData) {
+        setReport(repData);
       }
+    } catch (err: any) {
+      setError(err.message || "Failed to load incident details");
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
     loadData();
   }, [incidentId]);
 
@@ -77,29 +107,16 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
         incident_id: res.incident_id,
         status: res.status as any,
         created_at: res.created_at,
+        stage: "retrieving_evidence",
+        progress: 20,
       });
     } catch (err: any) {
-      setError(err.message || "Failed to initiate investigation");
+      setError(err.message || "Failed to initiate AI investigation");
       setInvestigating(false);
     }
   };
 
-  if (loading) {
-    return <div className="py-16 text-center text-slate-500">Loading incident and telemetry...</div>;
-  }
-
-  if (error && !incident) {
-    return (
-      <div className="p-4 rounded-lg bg-red-950/40 border border-red-800 text-red-300">
-        {error}
-      </div>
-    );
-  }
-
-  const [filterType, setFilterType] = useState<"all" | "trace" | "log" | "metric">("all");
-  const [resolving, setResolving] = useState<boolean>(false);
-
-  async function handleResolveIncident() {
+  const handleResolveIncident = async () => {
     if (!incident) return;
     try {
       setResolving(true);
@@ -110,6 +127,45 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
     } finally {
       setResolving(false);
     }
+  };
+
+  const scrollToEvidence = (evId: string) => {
+    const targetItem = evidenceList.find((e) => e.id === evId);
+    if (targetItem && filterType !== "all" && targetItem.type !== filterType) {
+      setFilterType("all");
+    }
+    setSearchEvidence("");
+    setHighlightedEvidenceId(evId);
+    setTimeout(() => {
+      const el = document.getElementById(`evidence-${evId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    }, 150);
+    setTimeout(() => {
+      setHighlightedEvidenceId((curr) => (curr === evId ? null : curr));
+    }, 4000);
+  };
+
+  if (loading && !incident) {
+    return (
+      <div className="py-20 text-center text-slate-500 bg-white border border-slate-200 rounded-lg text-xs space-y-2">
+        <div className="w-6 h-6 border-2 border-teal-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+        <p>Loading incident details & telemetry evidence...</p>
+      </div>
+    );
+  }
+
+  if (error && !incident) {
+    return (
+      <div className="p-4 rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs space-y-2">
+        <p className="font-bold">Error loading incident:</p>
+        <p>{error}</p>
+        <Link href="/" className="text-teal-700 underline font-semibold inline-block pt-1">
+          ← Return to Incidents Dashboard
+        </Link>
+      </div>
+    );
   }
 
   const traceCount = evidenceList.filter((e) => e.type === "trace").length;
@@ -117,82 +173,101 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
   const metricCount = evidenceList.filter((e) => e.type === "metric").length;
 
   const filteredEvidence = evidenceList.filter((item) => {
-    if (filterType === "all") return true;
-    return item.type === filterType;
+    if (filterType !== "all" && item.type !== filterType) return false;
+    if (searchEvidence.trim()) {
+      const q = searchEvidence.toLowerCase();
+      const matchMsg = item.message.toLowerCase().includes(q);
+      const matchId = item.id.toLowerCase().includes(q);
+      const matchSvc = item.service.toLowerCase().includes(q);
+      return matchMsg || matchId || matchSvc;
+    }
+    return true;
   });
 
-  const scrollToEvidence = (evId: string) => {
-    const targetItem = evidenceList.find((e) => e.id === evId);
-    if (targetItem && filterType !== "all" && targetItem.type !== filterType) {
-      setFilterType("all");
-    }
-    setHighlightedEvidenceId(evId);
-    setTimeout(() => {
-      const el = document.getElementById(`evidence-${evId}`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-      }
-    }, 100);
-    setTimeout(() => {
-      setHighlightedEvidenceId((current) => (current === evId ? null : current));
-    }, 3500);
-  };
+  const svcStyle = incident ? serviceColorMap[incident.service] || { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-300" } : { bg: "", text: "", border: "" };
+  const sevStyle = incident ? severityColorMap[incident.severity] || { bg: "bg-slate-50", text: "text-slate-700", border: "border-slate-300" } : { bg: "", text: "", border: "" };
+
+  // First available trace ID for quick waterfall launch
+  const firstTraceItem = evidenceList.find((e) => e.trace_id);
 
   return (
-    <div className="space-y-8">
-      {/* Back button and Header */}
+    <div className="space-y-5 text-xs">
+      {/* Top Breadcrumb */}
       <div>
-        <a href="/" className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
-          ← Back to Incident Dashboard
-        </a>
-        <div className="mt-3 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-orange-500/10 text-orange-400 border border-orange-500/20">
+        <Link
+          href="/"
+          className="inline-flex items-center space-x-1 text-teal-700 hover:text-teal-900 font-medium transition-colors"
+        >
+          <span>←</span>
+          <span>Back to Incidents Search</span>
+        </Link>
+      </div>
+
+      {/* Incident Header (Jaeger Trace Style) */}
+      <div className="bg-white border border-slate-200 rounded-lg p-4 shadow-sm space-y-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="space-y-1.5 min-w-0">
+            {/* Top Badges */}
+            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+              <span
+                className={`px-2 py-0.5 rounded font-mono font-semibold text-[11px] border uppercase ${svcStyle.bg} ${svcStyle.text} ${svcStyle.border}`}
+              >
+                {incident?.service}
+              </span>
+              <span
+                className={`px-2 py-0.5 rounded font-semibold text-[11px] border uppercase ${sevStyle.bg} ${sevStyle.text} ${sevStyle.border}`}
+              >
                 {incident?.severity}
               </span>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded border border-slate-700 bg-slate-800 text-slate-300 uppercase">
+              <span className="px-2 py-0.5 rounded font-semibold text-[11px] border uppercase bg-slate-100 text-slate-700 border-slate-300">
                 {incident?.status}
               </span>
               {incident?.source === "auto_detected" ? (
-                <span className="px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider bg-purple-500/10 text-purple-300 border border-purple-500/30 flex items-center space-x-1">
+                <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 flex items-center space-x-1">
                   <span>⚡</span>
                   <span>Auto-Detected</span>
                 </span>
               ) : (
-                <span className="px-2 py-0.5 rounded text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-slate-100 text-slate-600 border border-slate-200">
                   Manual
                 </span>
               )}
-              <span className="text-xs font-mono text-indigo-400 bg-indigo-950/50 px-2 py-0.5 rounded">
-                svc:{incident?.service}
-              </span>
-              <span className="text-xs text-slate-400 font-mono">ID: {incident?.id}</span>
+              {incident?.detection_rule && (
+                <span className="px-1.5 py-0.5 rounded font-mono text-[11px] bg-slate-50 text-slate-600 border border-slate-200">
+                  rule:{incident.detection_rule}
+                </span>
+              )}
             </div>
-            <h1 className="text-2xl font-bold text-white mt-1">{incident?.title}</h1>
+
+            {/* Title */}
+            <h1 className="text-lg font-bold text-slate-900 tracking-tight">
+              {incident?.title}
+            </h1>
             {incident?.description && (
-              <p className="text-sm text-slate-400 mt-1">{incident.description}</p>
+              <p className="text-slate-600 leading-relaxed">{incident.description}</p>
             )}
           </div>
 
-          <div className="flex items-center space-x-2">
+          {/* Action Buttons */}
+          <div className="flex items-center space-x-2 shrink-0">
             {incident?.status !== "resolved" && (
               <button
                 onClick={handleResolveIncident}
                 disabled={resolving}
-                className="px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 disabled:bg-emerald-900 disabled:text-emerald-400 text-white text-sm font-medium transition-all shadow-sm"
+                className="px-3 py-1.5 rounded bg-white hover:bg-slate-50 disabled:opacity-50 border border-slate-300 text-slate-700 font-medium text-xs transition-colors shadow-sm cursor-pointer"
               >
-                {resolving ? "Resolving..." : "Mark as Resolved"}
+                {resolving ? "Resolving..." : "Mark Resolved"}
               </button>
             )}
+
             <button
               onClick={handleStartInvestigation}
               disabled={investigating}
-              className="px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-900 disabled:text-indigo-400 text-white text-sm font-medium transition-all shadow-lg shadow-indigo-600/20 flex items-center space-x-2"
+              className="px-4 py-1.5 rounded bg-teal-600 hover:bg-teal-700 disabled:bg-teal-800 disabled:opacity-60 text-white font-medium text-xs tracking-wide shadow-sm transition-colors flex items-center space-x-1.5 cursor-pointer"
             >
               {investigating ? (
                 <>
-                  <span className="w-2 h-2 rounded-full bg-white animate-ping"></span>
+                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   <span>Investigating...</span>
                 </>
               ) : (
@@ -201,54 +276,88 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
             </button>
           </div>
         </div>
+
+        {/* Jaeger Metadata Summary Bar */}
+        <div className="pt-2.5 border-t border-slate-100 flex items-center space-x-4 text-[11px] text-slate-500 font-mono flex-wrap gap-y-1">
+          <span>Incident ID: <strong className="text-slate-700 select-all">{incident?.id}</strong></span>
+          <span>•</span>
+          <span>Started: <strong className="text-slate-700">{incident ? new Date(incident.started_at).toLocaleString() : ""}</strong></span>
+          {incident?.ended_at && (
+            <>
+              <span>•</span>
+              <span className="text-emerald-700">Resolved: <strong>{new Date(incident.ended_at).toLocaleString()}</strong></span>
+            </>
+          )}
+          <span>•</span>
+          <span>Evidence Count: <strong className="text-slate-700">{evidenceList.length}</strong></span>
+          {firstTraceItem?.trace_id && (
+            <>
+              <span>•</span>
+              <button
+                onClick={() => setActiveWaterfallTraceId(firstTraceItem.trace_id!)}
+                className="text-teal-700 hover:text-teal-900 underline font-semibold flex items-center space-x-1 cursor-pointer"
+              >
+                <span>Trace Waterfall</span>
+                <span>⚡</span>
+              </button>
+              <a
+                href={`http://localhost:16686/trace/${firstTraceItem.trace_id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-slate-500 hover:text-teal-700 underline"
+              >
+                Jaeger ↗
+              </a>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Auto-Detection Reason Card */}
+      {/* Auto-Detection Reason Box */}
       {incident?.source === "auto_detected" && (
-        <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-800/40 space-y-2">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center space-x-2">
-              <span className="text-base">⚡</span>
-              <span className="text-sm font-semibold text-purple-200">Automatically Detected by Engine</span>
-              {incident.detection_rule && (
-                <span className="text-xs font-mono text-purple-300 bg-purple-900/60 px-2 py-0.5 rounded border border-purple-700/50">
-                  rule:{incident.detection_rule}
-                </span>
-              )}
-            </div>
-            <span className="text-xs text-purple-400 font-mono">Deduplication & Telemetry Correlation Active</span>
+        <div className="bg-purple-50/60 border border-purple-200 rounded-lg p-3.5 space-y-1.5">
+          <div className="flex items-center space-x-2 text-purple-900 font-semibold text-xs">
+            <span>⚡ Automatically Correlated & Detected</span>
+            {incident.detection_rule && (
+              <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-purple-100 border border-purple-300">
+                {incident.detection_rule}
+              </span>
+            )}
           </div>
           {incident.detection_reason && (
-            <p className="text-xs text-purple-200/90 pl-6 leading-relaxed">
-              <strong>Detection Reason:</strong> {incident.detection_reason}
+            <p className="text-purple-950 font-mono text-[11px] leading-relaxed">
+              <strong>Trigger Reason:</strong> {incident.detection_reason}
             </p>
           )}
         </div>
       )}
 
-      {/* Investigation Progress Card */}
+      {/* Real Investigation Job Progress (No Fake Animations) */}
       {activeJob && (
-        <div className="p-5 rounded-xl bg-slate-900 border border-indigo-900/60 shadow-lg space-y-3">
-          <div className="flex items-center justify-between">
+        <div className="bg-white border border-teal-200 rounded-lg p-4 shadow-sm space-y-2.5">
+          <div className="flex items-center justify-between text-xs">
             <div className="flex items-center space-x-2">
-              <span className="text-sm font-semibold text-white">Investigation Progress</span>
-              <span className="text-xs font-mono text-indigo-400">Job: {activeJob.job_id}</span>
+              <span className="font-bold text-slate-900">AI Investigation Progress</span>
+              <span className="text-slate-500 font-mono text-[11px]">Job: {activeJob.job_id}</span>
             </div>
-            <span className="text-xs uppercase px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 font-medium">
+            <span className="px-2 py-0.5 rounded font-mono font-semibold text-[10px] uppercase bg-teal-50 text-teal-800 border border-teal-200">
               {activeJob.status}
             </span>
           </div>
 
           {activeJob.stage && (
-            <p className="text-xs text-slate-400">
-              Current Stage: <span className="font-mono text-slate-200">{activeJob.stage}</span>
+            <p className="text-slate-600 text-xs">
+              Current Stage:{" "}
+              <strong className="font-mono text-slate-800">{activeJob.stage}</strong>
+              {activeJob.stage === "retrieving_evidence" && " (Querying PostgreSQL evidence records)"}
+              {activeJob.stage === "analyzing_evidence" && " (Prompting Ollama qwen3:4b with telemetry context)"}
             </p>
           )}
 
           {activeJob.progress !== null && activeJob.progress !== undefined && (
-            <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200">
               <div
-                className="bg-indigo-500 h-2 rounded-full transition-all duration-500"
+                className="bg-teal-600 h-2 rounded-full transition-all duration-500"
                 style={{ width: `${activeJob.progress}%` }}
               ></div>
             </div>
@@ -257,259 +366,344 @@ export default function IncidentDetailPage({ params }: { params: Promise<{ id: s
       )}
 
       {/* AI Investigation Report */}
-      {report && (
-        <div className="p-6 rounded-xl bg-slate-900/80 border border-slate-700 shadow-xl space-y-6">
-          <div className="border-b border-slate-800 pb-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white flex items-center space-x-2">
+      {report ? (
+        <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm space-y-4">
+          <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
                 <span>🤖 AI Investigation Report</span>
               </h2>
-              <span className="text-xs text-slate-400">
-                Generated: {new Date(report.created_at).toLocaleString()}
-              </span>
+              <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+                Generated: {new Date(report.created_at).toLocaleString()} • Model: Ollama qwen3:4b
+              </p>
             </div>
-            <p className="text-sm text-slate-300 mt-2">{report.summary}</p>
+            <button
+              onClick={handleStartInvestigation}
+              disabled={investigating}
+              className="px-2.5 py-1 rounded bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 font-medium text-xs transition-colors cursor-pointer self-start sm:self-auto"
+            >
+              Re-run Investigation ↻
+            </button>
           </div>
 
-          <div className="space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-              Root-Cause Hypotheses & Evidence Correlations
-            </h3>
-
-            {report.hypotheses.map((hyp) => (
-              <div
-                key={hyp.id}
-                className="p-4 rounded-lg bg-slate-950/60 border border-slate-800 space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-mono text-indigo-400">{hyp.id}</span>
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded font-medium ${
-                      hyp.status === "supported"
-                        ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
-                        : hyp.status === "possible"
-                        ? "bg-amber-950 text-amber-400 border border-amber-800"
-                        : "bg-slate-800 text-slate-400"
-                    }`}
-                  >
-                    {hyp.status.toUpperCase()}
-                  </span>
-                </div>
-
-                <p className="text-sm font-medium text-white">{hyp.description}</p>
-
-                <div className="space-y-2 text-xs">
-                  {hyp.supporting_evidence.length > 0 && (
-                    <div className="flex items-center space-x-2 flex-wrap gap-1">
-                      <span className="text-emerald-400 font-medium">Supporting Evidence:</span>
-                      {hyp.supporting_evidence.map((evId) => (
-                        <button
-                          key={evId}
-                          onClick={() => scrollToEvidence(evId)}
-                          title={`Click to inspect evidence ${evId}`}
-                          className="px-2 py-0.5 rounded bg-emerald-950/80 hover:bg-emerald-900 text-emerald-300 font-mono transition-colors border border-emerald-800/60 cursor-pointer flex items-center space-x-1"
-                        >
-                          <span>{evId}</span>
-                          <span className="text-[10px] text-emerald-400">↓</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {hyp.contradicting_evidence && hyp.contradicting_evidence.length > 0 && (
-                    <div className="flex items-center space-x-2 flex-wrap gap-1">
-                      <span className="text-rose-400 font-medium">Contradicting Evidence:</span>
-                      {hyp.contradicting_evidence.map((evId) => (
-                        <button
-                          key={evId}
-                          onClick={() => scrollToEvidence(evId)}
-                          title={`Click to inspect evidence ${evId}`}
-                          className="px-2 py-0.5 rounded bg-rose-950/80 hover:bg-rose-900 text-rose-300 font-mono transition-colors border border-rose-800/60 cursor-pointer flex items-center space-x-1"
-                        >
-                          <span>{evId}</span>
-                          <span className="text-[10px] text-rose-400">↓</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {hyp.missing_evidence.length > 0 && (
-                    <div className="flex items-center space-x-2 flex-wrap gap-1">
-                      <span className="text-amber-400 font-medium">Missing Evidence:</span>
-                      {hyp.missing_evidence.map((item, idx) => (
-                        <span key={idx} className="px-2 py-0.5 rounded bg-amber-950/80 text-amber-300">
-                          {item}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {hyp.next_step && (
-                    <div className="p-2.5 rounded bg-indigo-950/40 border border-indigo-900/40 text-indigo-200 mt-2">
-                      <span className="font-semibold text-white">Recommended Next Step: </span>
-                      {hyp.next_step}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Telemetry Evidence Timeline */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-          <div>
-            <h2 className="text-base font-semibold text-white">Telemetry & Evidence Timeline</h2>
-            <p className="text-xs text-slate-400">
-              Unified traces, structured logs, and operational metrics correlated for this incident.
+          {/* Report Summary */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
+              Incident Summary & Diagnosis
+            </span>
+            <p className="text-slate-800 leading-relaxed text-xs font-medium">
+              {report.summary}
             </p>
           </div>
 
-          {/* Filter Pills */}
-          <div className="flex items-center space-x-1.5 bg-slate-900/80 p-1 rounded-lg border border-slate-800 text-xs">
+          {/* Root-Cause Hypotheses & Evidence Correlations */}
+          <div className="space-y-3">
+            <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              Root-Cause Hypotheses & Evidence Citations
+            </h3>
+
+            {report.hypotheses.map((hyp) => {
+              const statusPill =
+                hyp.status === "supported"
+                  ? "bg-emerald-50 text-emerald-800 border-emerald-300"
+                  : hyp.status === "possible"
+                  ? "bg-amber-50 text-amber-800 border-amber-300"
+                  : "bg-slate-100 text-slate-700 border-slate-300";
+
+              return (
+                <div
+                  key={hyp.id}
+                  className="bg-white border border-slate-200 rounded-lg p-3.5 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono font-bold text-teal-800 text-xs">
+                      #{hyp.id}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${statusPill}`}>
+                      {hyp.status}
+                    </span>
+                  </div>
+
+                  <p className="text-slate-900 font-semibold text-xs leading-normal">
+                    {hyp.description}
+                  </p>
+
+                  {/* Supporting Evidence Citations */}
+                  <div className="space-y-2 text-xs pt-1">
+                    {hyp.supporting_evidence && hyp.supporting_evidence.length > 0 && (
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                        <span className="font-semibold text-emerald-700 text-[11px]">
+                          Supporting Evidence:
+                        </span>
+                        {hyp.supporting_evidence.map((evId) => (
+                          <button
+                            key={evId}
+                            onClick={() => scrollToEvidence(evId)}
+                            title={`Click to scroll to evidence record ${evId}`}
+                            className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-mono text-[11px] border border-emerald-300 transition-colors cursor-pointer"
+                          >
+                            <span>{evId}</span>
+                            <span className="text-[10px]">↓</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Contradicting Evidence Citations */}
+                    {hyp.contradicting_evidence && hyp.contradicting_evidence.length > 0 && (
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                        <span className="font-semibold text-red-700 text-[11px]">
+                          Contradicting Evidence:
+                        </span>
+                        {hyp.contradicting_evidence.map((evId) => (
+                          <button
+                            key={evId}
+                            onClick={() => scrollToEvidence(evId)}
+                            title={`Click to scroll to evidence record ${evId}`}
+                            className="inline-flex items-center space-x-1 px-2 py-0.5 rounded bg-red-50 hover:bg-red-100 text-red-800 font-mono text-[11px] border border-red-300 transition-colors cursor-pointer"
+                          >
+                            <span>{evId}</span>
+                            <span className="text-[10px]">↓</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Missing Evidence */}
+                    {hyp.missing_evidence && hyp.missing_evidence.length > 0 && (
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                        <span className="font-semibold text-amber-700 text-[11px]">
+                          Missing Evidence:
+                        </span>
+                        {hyp.missing_evidence.map((item, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-300 text-[11px]"
+                          >
+                            {item}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Recommended Next Step */}
+                    {hyp.next_step && (
+                      <div className="bg-slate-50 border border-slate-200 rounded p-2.5 text-slate-700 mt-2">
+                        <span className="font-bold text-slate-900">Recommended Next Step: </span>
+                        <span>{hyp.next_step}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : !activeJob ? (
+        <div className="bg-white border border-dashed border-slate-300 rounded-lg p-6 text-center space-y-2">
+          <p className="font-bold text-slate-700 text-xs">No AI Investigation Report Generated Yet</p>
+          <p className="text-slate-500 text-xs max-w-md mx-auto">
+            Click &quot;Trigger AI Investigation&quot; above to prompt local Ollama (qwen3:4b) with real PostgreSQL telemetry evidence and generate diagnostic root-cause hypotheses.
+          </p>
+        </div>
+      ) : null}
+
+      {/* Telemetry Evidence Section */}
+      <div className="space-y-3">
+        {/* Controls Bar */}
+        <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Tabs */}
+          <div className="flex items-center space-x-1.5 text-xs">
             <button
               onClick={() => setFilterType("all")}
-              className={`px-2.5 py-1 rounded transition-colors ${
+              className={`px-3 py-1 rounded font-medium transition-colors ${
                 filterType === "all"
-                  ? "bg-slate-700 text-white font-medium shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-teal-600 text-white shadow-xs"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
               }`}
             >
               All ({evidenceList.length})
             </button>
             <button
               onClick={() => setFilterType("trace")}
-              className={`px-2.5 py-1 rounded transition-colors ${
+              className={`px-3 py-1 rounded font-medium transition-colors ${
                 filterType === "trace"
-                  ? "bg-indigo-600 text-white font-medium shadow-sm"
-                  : "text-slate-400 hover:text-indigo-300"
+                  ? "bg-teal-600 text-white shadow-xs"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
               }`}
             >
               Traces ({traceCount})
             </button>
             <button
               onClick={() => setFilterType("log")}
-              className={`px-2.5 py-1 rounded transition-colors ${
+              className={`px-3 py-1 rounded font-medium transition-colors ${
                 filterType === "log"
-                  ? "bg-cyan-600 text-white font-medium shadow-sm"
-                  : "text-slate-400 hover:text-cyan-300"
+                  ? "bg-teal-600 text-white shadow-xs"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
               }`}
             >
               Logs ({logCount})
             </button>
             <button
               onClick={() => setFilterType("metric")}
-              className={`px-2.5 py-1 rounded transition-colors ${
+              className={`px-3 py-1 rounded font-medium transition-colors ${
                 filterType === "metric"
-                  ? "bg-emerald-600 text-white font-medium shadow-sm"
-                  : "text-slate-400 hover:text-emerald-300"
+                  ? "bg-teal-600 text-white shadow-xs"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
               }`}
             >
               Metrics ({metricCount})
             </button>
           </div>
+
+          {/* Search within evidence */}
+          <div className="w-full sm:w-64">
+            <input
+              type="text"
+              placeholder="Search evidence..."
+              value={searchEvidence}
+              onChange={(e) => setSearchEvidence(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-300 rounded px-2.5 py-1 text-slate-800 text-xs focus:bg-white focus:border-teal-600 focus:outline-none"
+            />
+          </div>
         </div>
 
+        {/* Evidence Records List */}
         {filteredEvidence.length === 0 ? (
-          <div className="p-8 text-center text-slate-500 text-sm border border-dashed border-slate-800 rounded-xl">
+          <div className="bg-white border border-dashed border-slate-300 rounded-lg p-8 text-center text-slate-500">
             {evidenceList.length === 0
-              ? "No telemetry evidence recorded yet."
+              ? "No telemetry evidence recorded for this incident yet."
               : `No evidence found matching type "${filterType}".`}
           </div>
         ) : (
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {filteredEvidence.map((item) => {
-              // Badge color depending on type
-              const typeBadgeClass =
-                item.type === "trace"
-                  ? "bg-indigo-950/80 text-indigo-300 border border-indigo-800/60"
-                  : item.type === "log"
-                  ? "bg-cyan-950/80 text-cyan-300 border border-cyan-800/60"
-                  : item.type === "metric"
-                  ? "bg-emerald-950/80 text-emerald-300 border border-emerald-800/60"
-                  : "bg-slate-800 text-slate-300 border border-slate-700";
-
-              // Severity badge color
-              const sev = item.severity?.toLowerCase();
-              const sevBadgeClass =
-                sev === "error" || sev === "critical"
-                  ? "bg-rose-950/70 text-rose-300 border border-rose-800/60"
-                  : sev === "warn" || sev === "warning"
-                  ? "bg-amber-950/70 text-amber-300 border border-amber-800/60"
-                  : sev === "info"
-                  ? "bg-blue-950/70 text-blue-300 border border-blue-800/60"
-                  : "bg-slate-800/80 text-slate-400 border border-slate-700/60";
-
               const isHighlighted = highlightedEvidenceId === item.id;
+              const isExpanded = Boolean(expandedEvidenceIds[item.id]);
               const meta = item.metadata || {};
+
+              const typeBadge =
+                item.type === "trace"
+                  ? "bg-indigo-50 text-indigo-800 border-indigo-200"
+                  : item.type === "log"
+                  ? "bg-sky-50 text-sky-800 border-sky-200"
+                  : item.type === "metric"
+                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                  : "bg-slate-100 text-slate-700 border-slate-200";
+
+              const sev = item.severity?.toLowerCase();
+              const sevBadge =
+                sev === "error" || sev === "critical"
+                  ? "bg-red-50 text-red-700 border-red-200"
+                  : sev === "warn" || sev === "warning"
+                  ? "bg-amber-50 text-amber-700 border-amber-200"
+                  : "bg-slate-100 text-slate-600 border-slate-200";
 
               return (
                 <div
                   key={item.id}
                   id={`evidence-${item.id}`}
-                  className={`p-3.5 rounded-lg border transition-all flex flex-col md:flex-row md:items-start justify-between gap-3 text-xs ${
+                  className={`bg-white border rounded-lg p-3 space-y-2 transition-all duration-300 ${
                     isHighlighted
-                      ? "bg-indigo-950/70 border-indigo-400 ring-2 ring-indigo-500 shadow-lg shadow-indigo-500/20 animate-pulse"
-                      : "bg-slate-900/50 border-slate-800/80 hover:border-slate-700"
+                      ? "border-teal-500 ring-2 ring-teal-400 bg-teal-50/50 shadow-md"
+                      : "border-slate-200 hover:border-slate-300"
                   }`}
                 >
-                  <div className="space-y-1.5 flex-1 min-w-0">
-                    <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                      <span className="font-mono text-indigo-400 font-semibold">{item.id}</span>
-                      <span className={`uppercase px-1.5 py-0.5 rounded font-semibold text-[10px] tracking-wide ${typeBadgeClass}`}>
-                        {item.type}
-                      </span>
-                      {item.severity && (
-                        <span className={`uppercase px-1.5 py-0.5 rounded font-semibold text-[10px] ${sevBadgeClass}`}>
-                          {item.severity}
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                    <div className="space-y-1 min-w-0 flex-1">
+                      {/* Top Identifiers */}
+                      <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                        <span className="font-mono font-bold text-teal-800 text-[11px] select-all">
+                          {item.id}
                         </span>
-                      )}
-                      <span className="text-slate-400 font-mono">svc:{item.service}</span>
+                        <span className={`px-1.5 py-0.5 rounded font-mono font-semibold text-[10px] border uppercase ${typeBadge}`}>
+                          {item.type}
+                        </span>
+                        {item.severity && (
+                          <span className={`px-1.5 py-0.5 rounded font-semibold text-[10px] border uppercase ${sevBadge}`}>
+                            {item.severity}
+                          </span>
+                        )}
+                        <span className="font-mono text-slate-700 bg-slate-100 px-1.5 py-0.5 rounded text-[11px] border border-slate-200">
+                          {item.service}
+                        </span>
 
-                      {/* Specialized Metadata Pill */}
-                      {item.type === "trace" && meta.duration_ms !== undefined ? (
-                        <span className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[10px]">
-                          {Number(meta.duration_ms).toFixed(1)}ms
-                        </span>
-                      ) : null}
-                      {item.type === "metric" && meta.metric_name ? (
-                        <span className="px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-800/40 font-mono text-[10px]">
-                          {String(meta.metric_name)}: {String(meta.value ?? "")} {String(meta.unit ?? "")}
-                        </span>
-                      ) : null}
+                        {/* Metric info pill */}
+                        {item.type === "metric" && meta.metric_name ? (
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-mono text-[10px]">
+                            {String(meta.metric_name)}: {String(meta.value ?? "")} {String(meta.unit ?? "")}
+                          </span>
+                        ) : null}
+
+                        {/* Trace duration pill */}
+                        {item.type === "trace" && meta.duration_ms !== undefined ? (
+                          <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[10px]">
+                            {Number(meta.duration_ms).toFixed(1)}ms
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {/* Message Content */}
+                      <p className="text-slate-800 break-words leading-relaxed text-xs">
+                        {item.message}
+                      </p>
                     </div>
 
-                    <p className="text-sm text-slate-200 break-words font-sans">{item.message}</p>
+                    {/* Actions and Timestamp on right */}
+                    <div className="flex sm:flex-col sm:items-end justify-between items-center text-slate-500 font-mono text-[11px] shrink-0 space-y-1">
+                      <span>{new Date(item.timestamp).toISOString()}</span>
+                      <div className="flex items-center space-x-2">
+                        {item.trace_id && (
+                          <>
+                            <button
+                              onClick={() => setActiveWaterfallTraceId(item.trace_id!)}
+                              className="px-2 py-0.5 rounded bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 transition-colors text-[10px] font-semibold cursor-pointer"
+                            >
+                              Trace Waterfall ⚡
+                            </button>
+                            <a
+                              href={`http://localhost:16686/trace/${item.trace_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-slate-500 hover:text-teal-700 underline text-[10px]"
+                            >
+                              Jaeger ↗
+                            </a>
+                          </>
+                        )}
+                        <button
+                          onClick={() => toggleExpand(item.id)}
+                          className="px-2 py-0.5 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 text-[10px] cursor-pointer"
+                        >
+                          {isExpanded ? "Hide JSON ▲" : "Attributes ▼"}
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="text-slate-500 flex flex-col md:items-end font-mono text-[11px] shrink-0 space-y-1">
-                    <span>{new Date(item.timestamp).toISOString()}</span>
-                    {item.trace_id ? (
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => setActiveWaterfallTraceId(item.trace_id!)}
-                          className="px-2 py-0.5 rounded bg-indigo-950 text-indigo-300 border border-indigo-800 hover:bg-indigo-900 transition-colors text-[10px] cursor-pointer"
-                        >
-                          Trace Waterfall ⚡
-                        </button>
-                        <a
-                          href={`http://localhost:16686/trace/${item.trace_id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-slate-400 hover:text-indigo-300 underline text-[10px]"
-                        >
-                          Jaeger ↗
-                        </a>
-                      </div>
-                    ) : null}
-                    {meta.span_id ? (
-                      <span className="text-slate-500 text-[10px]">
-                        span:{String(meta.span_id).slice(0, 8)}...
+                  {/* Expanded JSON Inspector */}
+                  {isExpanded && (
+                    <div className="pt-2 border-t border-slate-100 space-y-1">
+                      <span className="text-slate-400 font-mono text-[10px] block uppercase font-bold">
+                        TELEMETRY ATTRIBUTES / PAYLOAD:
                       </span>
-                    ) : null}
-                  </div>
+                      <pre className="p-2.5 rounded bg-slate-50 border border-slate-200 text-[11px] text-slate-800 overflow-x-auto font-mono max-h-56 leading-relaxed select-all">
+                        {JSON.stringify(
+                          {
+                            id: item.id,
+                            service: item.service,
+                            type: item.type,
+                            timestamp: item.timestamp,
+                            trace_id: item.trace_id,
+                            severity: item.severity,
+                            metadata: item.metadata,
+                          },
+                          null,
+                          2
+                        )}
+                      </pre>
+                    </div>
+                  )}
                 </div>
               );
             })}
